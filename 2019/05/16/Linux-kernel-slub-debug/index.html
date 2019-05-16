@@ -7,19 +7,19 @@
   
   <title>Linux内核slub使用与调试 | JoyYoung&#39;s blog</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="description" content="记一次system_server崩溃的分析与解决过程">
+  <meta name="description" content="linux slub 基础知识">
 <meta name="keywords" content="稳定性,学习,Linux">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Linux内核slub使用与调试">
 <meta property="og:url" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/index.html">
 <meta property="og:site_name" content="JoyYoung&#39;s blog">
-<meta property="og:description" content="记一次system_server崩溃的分析与解决过程">
+<meta property="og:description" content="linux slub 基础知识">
 <meta property="og:locale" content="default">
 <meta property="og:image" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG">
-<meta property="og:updated_time" content="2019-05-16T12:45:57.986Z">
+<meta property="og:updated_time" content="2019-05-16T13:00:58.737Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Linux内核slub使用与调试">
-<meta name="twitter:description" content="记一次system_server崩溃的分析与解决过程">
+<meta name="twitter:description" content="linux slub 基础知识">
 <meta name="twitter:image" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG">
   
   
@@ -158,10 +158,19 @@
     
 <nav id="article-nav">
   
+    <a href="/2019/05/17/Arm-linux-hw-breakpoint/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Arm Linux硬件断点调试
+        
+      </div>
+    </a>
   
-    <a href="/2019/05/16/Arm-linux-hw-breakpoint/" id="article-nav-older" class="article-nav-link-wrap">
+  
+    <a href="/2019/05/08/Android-frameworks-reference-table-overflow/" id="article-nav-older" class="article-nav-link-wrap">
       <strong class="article-nav-caption">Older</strong>
-      <div class="article-nav-title"></div>
+      <div class="article-nav-title">原生systemUI导致framwork全局符号表溢出问题</div>
     </a>
   
 </nav>
@@ -180,7 +189,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">2</span></li></ul>
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">3</span></li></ul>
     </div>
   </div>
 
@@ -190,7 +199,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tag Cloud</h3>
     <div class="widget tagcloud">
-      <a href="/tags/Android/" style="font-size: 10px;">Android</a> <a href="/tags/Linux/" style="font-size: 10px;">Linux</a> <a href="/tags/学习/" style="font-size: 10px;">学习</a> <a href="/tags/实战/" style="font-size: 10px;">实战</a> <a href="/tags/稳定性/" style="font-size: 20px;">稳定性</a>
+      <a href="/tags/Android/" style="font-size: 10px;">Android</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a> <a href="/tags/学习/" style="font-size: 15px;">学习</a> <a href="/tags/实战/" style="font-size: 10px;">实战</a> <a href="/tags/稳定性/" style="font-size: 20px;">稳定性</a>
     </div>
   </div>
 
@@ -212,11 +221,11 @@
       <ul>
         
           <li>
-            <a href="/2019/05/16/Linux-kernel-slub-debug/">Linux内核slub使用与调试</a>
+            <a href="/2019/05/17/Arm-linux-hw-breakpoint/">Arm Linux硬件断点调试</a>
           </li>
         
           <li>
-            <a href="/2019/05/16/Arm-linux-hw-breakpoint/">(no title)</a>
+            <a href="/2019/05/16/Linux-kernel-slub-debug/">Linux内核slub使用与调试</a>
           </li>
         
           <li>
