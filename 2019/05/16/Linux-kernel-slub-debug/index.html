@@ -16,7 +16,7 @@
 <meta property="og:description" content="linux slub 基础知识">
 <meta property="og:locale" content="default">
 <meta property="og:image" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG">
-<meta property="og:updated_time" content="2019-05-16T13:00:58.737Z">
+<meta property="og:updated_time" content="2019-05-16T13:26:45.599Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Linux内核slub使用与调试">
 <meta name="twitter:description" content="linux slub 基础知识">
@@ -139,7 +139,7 @@
 <li>重复释放  ：echo 4 &gt; slub-trigger</li>
 <li>未释放    ：echo 5 &gt; slub-trigger<br>由于trace默认关闭，所以我们把我们专有的slab缓存trace调试打开<br>（xxxxx:/sys/kernel/slab/test_slab_obj # echo 1 &gt; trace）<br>打开后每一次alloc和free都会打印回溯</li>
 </ul>
-<p>看看有边界溢出的例子<img src="/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG" alt="log信息如下"></p>
+<p>看看有边界溢出的例子<img src="/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG" alt="log信息"></p>
 <h3 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h3><p>/sys/kernel/slab目录说明（待续）</p>
 <p>slabinfo工具（待续）</p>
 <p>关于slub内存泄露（找出哪个slub可能泄露后用T选项观察,待续）</p>
