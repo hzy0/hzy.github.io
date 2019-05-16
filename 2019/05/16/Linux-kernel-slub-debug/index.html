@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>Linux内核slub使用与调试 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="记一次system_server崩溃的分析与解决过程">
+<meta name="keywords" content="稳定性,学习,Linux">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux内核slub使用与调试">
+<meta property="og:url" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="记一次system_server崩溃的分析与解决过程">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG">
+<meta property="og:updated_time" content="2019-05-16T12:45:57.986Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Linux内核slub使用与调试">
+<meta name="twitter:description" content="记一次system_server崩溃的分析与解决过程">
+<meta name="twitter:image" content="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Linux-kernel-slub-debug" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/05/16/Linux-kernel-slub-debug/" class="article-date">
+  <time datetime="2019-05-16T11:41:00.000Z" itemprop="datePublished">2019-05-16</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      Linux内核slub使用与调试
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>在Linux中，伙伴系统（buddy system）是以页为单位管理和分配内存。但是现实在使用内存的时候不可能总是需要页的倍数大小的内存块，为了能支持更小粒度的内存非配，内核先后出现了slab/slub/slob三种小内存分配器；slub分配器是slab分配器的优化版本，而slob是一种精简的小内存分配算法，主要用于嵌入式系统。慢慢的slab分配器或许会被slub取代，现在android 的linux内核多是使用了slub。</p>
+<p>我们都知道，只要是需要我们自己动态分配释放的，都可能在使用的过程中的疏忽导致一些问题的出现。所以学习内存分配器的原理和调试方法是很有必要的。内存问题大家都已经做了很多的总结，大多是以下几类：</p>
+<ul>
+<li>内存泄露（leak），分配使用完之后忘了释放，导致内存占用不断增长；最终可能导致内存紧张、系统异常、甚至OOM</li>
+<li>内存越界（overrun），我们通常叫做内存踩踏，访问了分配的区域之外的内存，覆盖了不属于自己的数据；从而导致其他模块异常或系统崩溃</li>
+<li>使用已释放的内存（use after free），已释放的内存会在某些时刻被其他需要的模块申请，若释放后还往里面写数据，会导致其他模块的数据被修改而导致问题；</li>
+<li>使用未初始化的数据（use uninitialised bytes），缺省模式下alloc分配的内存是不被初始化的，内存值是随机的，直接使用的话可能会造成很严重的后果。<br>….</li>
+</ul>
+<p>而slub自带了故障诊断机制，给内存问题的分析带来了很多方便之处。本文的目标就是学习如何诊断slub内存问题。</p>
+<h3 id="机制"><a href="#机制" class="headerlink" title="机制"></a>机制</h3><h5 id="系统是否使用了slub，如何确认？"><a href="#系统是否使用了slub，如何确认？" class="headerlink" title="系统是否使用了slub，如何确认？"></a>系统是否使用了slub，如何确认？</h5><ul>
+<li>可以通过查看/sys/kernel/slab目录是否存在来判断，有就是slub，没有就是slab；</li>
+<li>或者查看内核配置宏是否开启了CONFIG_SLUB，若开启此宏便是使用了slub分配器！</li>
+</ul>
+<h5 id="slub有哪些调试机制？"><a href="#slub有哪些调试机制？" class="headerlink" title="slub有哪些调试机制？"></a>slub有哪些调试机制？</h5><ul>
+<li>Red zone来自于橄榄球术语，是指球场底线附近的区域，slub通过在每一个对象后面额外添加一块red zone区域来帮助检测越界(overrun)问题，在red zone里填充了特征字符，如果代码访问到了red zone就意味着越界了。</li>
+<li>Poisoning是通过往slub对象中填充特征字符的方式来检测use-after-free、use-uninitialised等问题，比如在分配slub对象时填充0x5a，在释放时填充0x6b，然后debug代码检查时如果看到本该是0x6b的位置变成了别的内容，就可能是发生了use-after-free，而本该是0x5a的位置如果变成了其它内容就意味着可能是use-uninitialised问题。相关poison字节定义在kernel/include/linux/poison.h中。</li>
+</ul>
+<h5 id="Slub的debug机制有哪些相关的内核宏？"><a href="#Slub的debug机制有哪些相关的内核宏？" class="headerlink" title="Slub的debug机制有哪些相关的内核宏？"></a>Slub的debug机制有哪些相关的内核宏？</h5><ul>
+<li>CONFIG_SLUB_DEBUG调试机制开关宏，开启此宏并不代表激活了debug机制，还需要配置调试选项！</li>
+<li>CONFIG_SLUB_DEBUG_ON此宏开机默认激活debug选项，查看默认选项查看DEBUG_DEFAULT_FLAGS.否则需要通过内核cmline添加slub_debug参数制定选项，详见Slub.txt！</li>
+<li>CONFIG_SLUB_DEBUG_PANIC_ON此宏打开后，当slub检测到错误，会主动触发panic！</li>
+</ul>
+<h5 id="slub有哪些调试选项？"><a href="#slub有哪些调试选项？" class="headerlink" title="slub有哪些调试选项？"></a>slub有哪些调试选项？</h5><p>参考内核文档kernel/Documentation/vm/slub.txt可知</p>
+<ul>
+<li>F        Sanity checks on (enables SLAB_DEBUG_FREE. Sorry SLAB legacy issues) </li>
+<li>Z        Red zoning </li>
+<li>P        Poisoning (object and padding)</li>
+<li>U        User tracking (free and alloc)</li>
+<li>T        Trace (please only use on single slabs) </li>
+<li>A        Toggle failslab filter mark for the cache</li>
+<li>O        Switch debugging off for caches that would have caused higher minimum slab orders </li>
+<li>“-”       Switch all debugging off (useful if the kernel is configured with CONFIG_SLUB_DEBUG_ON) </li>
+</ul>
+<h3 id="测试"><a href="#测试" class="headerlink" title="测试"></a>测试</h3><p>为了方便测试，相关的控制宏我们配置如下：</p>
+<ul>
+<li>开启CONFIG_SLUB_DEBUG调试，但是不开启CONFIG_SLUB_DEBUG_PANIC_ON（slub内存异常只输出警告信息，不panic）！</li>
+<li>开启CONFIG_SLUB_DEBUG_ON默认参数，所有kmem_cache对象都进行调试！否则需要使用内核cmdline传递slub_debug参数！<br>然后注册一个内核模块，创建一个命名为test_slab_obj专属slub分配器，然后根据用户写入slub-trigger的值来触发指定内存测试代码！测试代码如下：</li>
+</ul>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/init.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/module.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/slab.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/delay.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/fs.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/uaccess.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;linux/proc_fs.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">test_struct</span>&#123;</span></span><br><span class="line">    <span class="keyword">int</span> a;</span><br><span class="line">    <span class="keyword">int</span> b;</span><br><span class="line">    <span class="keyword">int</span> c;</span><br><span class="line">&#125;;</span><br><span class="line"> </span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kmem_cache</span> *<span class="title">kmem_cache_obj</span>;</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">test_struct</span> *<span class="title">memblk</span>=<span class="title">NULL</span>;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">mm_create</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    kmem_cache_obj=kmem_cache_create(<span class="string">"test_slab_obj"</span>,<span class="keyword">sizeof</span>(struct test_struct),<span class="number">0</span>,SLAB_HWCACHE_ALIGN,<span class="literal">NULL</span>);  </span><br><span class="line">&#125;  </span><br><span class="line">       </span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">mm_destroy</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    kmem_cache_destroy(kmem_cache_obj);</span><br><span class="line">&#125;  </span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">redzone_oob_right</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    <span class="keyword">int</span> *p;</span><br><span class="line">    memblk=kmem_cache_alloc(kmem_cache_obj,GFP_KERNEL);  </span><br><span class="line">    memblk-&gt;a=<span class="number">0x1234</span>;</span><br><span class="line">    memblk-&gt;b=<span class="number">0x5678</span>;</span><br><span class="line">    memblk-&gt;c=<span class="number">0x9abc</span>;</span><br><span class="line"></span><br><span class="line">    p = &amp;memblk-&gt;c;</span><br><span class="line">    p++;</span><br><span class="line">    *p = <span class="number">0x88888888</span>;</span><br><span class="line">    </span><br><span class="line">    kfree(memblk);</span><br><span class="line">&#125;    </span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">redzone_oob_left</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    <span class="keyword">int</span> *p;</span><br><span class="line">    memblk=kmem_cache_alloc(kmem_cache_obj,GFP_KERNEL);  </span><br><span class="line">    memblk-&gt;a=<span class="number">0x1234</span>;</span><br><span class="line">    memblk-&gt;b=<span class="number">0x5678</span>;</span><br><span class="line">    memblk-&gt;c=<span class="number">0x9abc</span>;</span><br><span class="line"></span><br><span class="line">    p = &amp;memblk-&gt;a;</span><br><span class="line">    p--;</span><br><span class="line">    *p = <span class="number">0x88888888</span>;</span><br><span class="line">    </span><br><span class="line">    kfree(memblk);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">test_obj_uaf</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    memblk=kmem_cache_alloc(kmem_cache_obj,GFP_KERNEL);  </span><br><span class="line">    memblk-&gt;a=<span class="number">0x1234</span>;</span><br><span class="line">    memblk-&gt;b=<span class="number">0x5678</span>;</span><br><span class="line">    memblk-&gt;c=<span class="number">0x9abc</span>;</span><br><span class="line">    kfree(memblk);</span><br><span class="line">    memblk-&gt;a=<span class="number">0xabcd</span>;</span><br><span class="line">    memblk-&gt;b=<span class="number">0x1234</span>;</span><br><span class="line">    memblk-&gt;c=<span class="number">0x8789</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">test_obj_double_free</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    memblk=kmem_cache_alloc(kmem_cache_obj,GFP_KERNEL);</span><br><span class="line">    memblk-&gt;a=<span class="number">0x1234</span>;</span><br><span class="line">    memblk-&gt;b=<span class="number">0x5678</span>;</span><br><span class="line">    memblk-&gt;c=<span class="number">0x9abc</span>;</span><br><span class="line">    kfree(memblk);</span><br><span class="line">    kfree(memblk);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">test_obj_leak</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    memblk=kmem_cache_alloc(kmem_cache_obj,GFP_KERNEL);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> ssize_t <span class="title">write_slubbug_trigger</span><span class="params">(struct file *file, <span class="keyword">const</span> <span class="keyword">char</span> __user *buf,</span></span></span><br><span class="line"><span class="function"><span class="params">				   <span class="keyword">size_t</span> count, <span class="keyword">loff_t</span> *ppos)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (count) &#123;</span><br><span class="line">        <span class="keyword">char</span> c;</span><br><span class="line">        <span class="keyword">if</span> (get_user(c, buf))</span><br><span class="line">            <span class="keyword">return</span> -EFAULT;</span><br><span class="line">			    </span><br><span class="line">        <span class="keyword">switch</span>(c)&#123;</span><br><span class="line">          <span class="keyword">case</span> <span class="string">'1'</span>:</span><br><span class="line">              redzone_oob_right();</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">          <span class="keyword">case</span> <span class="string">'2'</span>:</span><br><span class="line">              redzone_oob_left();</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">          <span class="keyword">case</span> <span class="string">'3'</span>:</span><br><span class="line">              test_obj_uaf();</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">          <span class="keyword">case</span> <span class="string">'4'</span>:</span><br><span class="line">              test_obj_double_free();</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">          <span class="keyword">case</span> <span class="string">'5'</span>:</span><br><span class="line">              test_obj_leak();</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">          <span class="keyword">default</span>:</span><br><span class="line">              pr_err(<span class="string">"unknow paramers\n"</span>);</span><br><span class="line">              <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> count;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">file_operations</span> <span class="title">proc_slub_trigger_operations</span> = &#123;</span></span><br><span class="line">	  .write		= write_slubbug_trigger,</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">int</span> __<span class="function">init <span class="title">slub_test_init</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    mm_create();</span><br><span class="line">    <span class="keyword">if</span> (!proc_create(<span class="string">"slub-trigger"</span>, <span class="number">0666</span>, <span class="literal">NULL</span>,&amp;proc_slub_trigger_operations))</span><br><span class="line">  		   pr_err(<span class="string">"Failed to register slub debug proc interface\n"</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line">       </span><br><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> __<span class="function"><span class="built_in">exit</span> <span class="title">slub_test_exit</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    mm_destroy();</span><br><span class="line">&#125; </span><br><span class="line"></span><br><span class="line">module_init(slub_test_init);</span><br><span class="line">module_exit(slub_test_exit);</span><br><span class="line">MODULE_LICENSE(<span class="string">"GPL"</span>);</span><br></pre></td></tr></table></figure>
+
+<p>将以上代码保存为test_slub.c放到kernel/lib目录下，在makefile文件添加编译项obj-y +=test_slub.o；重新编译、重刷boot.img，确认我们的驱动模块加载成功：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">xxxxx:/proc # ls -lZ slub-trigger</span><br><span class="line">-rw-rw-rw- 1 root root u:object_r:proc:s0 0 2018-01-02 06:32 slub-trigger</span><br></pre></td></tr></table></figure>
+
+<p>我们创建的slub信息如下：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">xxxxx:/proc # cat slabinfo</span><br><span class="line">slabinfo - version: 2.1</span><br><span class="line"><span class="meta">#</span> name </span><br><span class="line"><span class="meta">#</span> &lt;active_objs&gt;</span><br><span class="line"><span class="meta">#</span> &lt;num_objs&gt;</span><br><span class="line"><span class="meta">#</span> &lt;objsize&gt;</span><br><span class="line"><span class="meta">#</span> &lt;objperslab&gt;</span><br><span class="line"><span class="meta">#</span> &lt;pagesperslab&gt; : tunables &lt;limit&gt; &lt;batchcount&gt; </span><br><span class="line"><span class="meta">#</span> &lt;sharedfactor&gt; : slabdata &lt;active_slabs&gt; &lt;num_slabs&gt; &lt;sharedavail&gt;</span><br><span class="line">我们的例子</span><br><span class="line">test_slab_obj</span><br><span class="line">180</span><br><span class="line">184</span><br><span class="line">352</span><br><span class="line">23</span><br><span class="line">2 : tunables    0    0    </span><br><span class="line">0 : slabdata      8      8      0</span><br></pre></td></tr></table></figure>
+
+<p>测试用例说明：</p>
+<ul>
+<li>右边界溢出：echo 1 &gt; slub-trigger</li>
+<li>左边界溢出：echo 2 &gt; slub-trigger</li>
+<li>释放后使用：echo 3 &gt; slub-trigger</li>
+<li>重复释放  ：echo 4 &gt; slub-trigger</li>
+<li>未释放    ：echo 5 &gt; slub-trigger<br>由于trace默认关闭，所以我们把我们专有的slab缓存trace调试打开<br>（xxxxx:/sys/kernel/slab/test_slab_obj # echo 1 &gt; trace）<br>打开后每一次alloc和free都会打印回溯</li>
+</ul>
+<p>看看有边界溢出的例子<img src="/2019/05/16/Linux-kernel-slub-debug/right_oob.PNG" alt="log信息如下"></p>
+<h3 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h3><p>/sys/kernel/slab目录说明（待续）</p>
+<p>slabinfo工具（待续）</p>
+<p>关于slub内存泄露（找出哪个slub可能泄露后用T选项观察,待续）</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/05/16/Linux-kernel-slub-debug/" data-id="cjvqn295k00033oiirh052zmv" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/">Linux</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/学习/">学习</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+  
+    <a href="/2019/05/16/Arm-linux-hw-breakpoint/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title"></div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Android/" style="font-size: 10px;">Android</a> <a href="/tags/Linux/" style="font-size: 10px;">Linux</a> <a href="/tags/学习/" style="font-size: 10px;">学习</a> <a href="/tags/实战/" style="font-size: 10px;">实战</a> <a href="/tags/稳定性/" style="font-size: 20px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/05/16/Linux-kernel-slub-debug/">Linux内核slub使用与调试</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/16/Arm-linux-hw-breakpoint/">(no title)</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/08/Android-frameworks-reference-table-overflow/">原生systemUI导致framwork全局符号表溢出问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/04/30/first-page/">JoyYoung&#39;s blog journey</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>
