@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>关机过程中死锁问题 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="记一次死锁导致的linux卡死在关机流程上的问题分析与解决过程">
+<meta name="keywords" content="实战 - 稳定性 - Linux">
+<meta property="og:type" content="article">
+<meta property="og:title" content="关机过程中死锁问题">
+<meta property="og:url" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="记一次死锁导致的linux卡死在关机流程上的问题分析与解决过程">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/disk-sleep-process.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/init-process.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-mutex.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-device.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/flow1.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/mutex-found.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/key-info.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-module.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-owner.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-waiter.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-mutex.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-lock-fail.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-trace.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-code.PNG">
+<meta property="og:updated_time" content="2019-05-18T13:55:35.039Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="关机过程中死锁问题">
+<meta name="twitter:description" content="记一次死锁导致的linux卡死在关机流程上的问题分析与解决过程">
+<meta name="twitter:image" content="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/disk-sleep-process.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Linux-kernel-deadlock-in-shutdown-flow" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" class="article-date">
+  <time datetime="2019-05-20T15:47:44.000Z" itemprop="datePublished">2019-05-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      关机过程中死锁问题
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>手机通过OTG连接鼠标、键盘灯设备，概率出现关不了机。</p>
+<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a><strong>初步排查</strong></h2><p>手机黑屏、连接电脑没有adb口、按power2~4秒没有开机说明手机没有进入关机状态。Tcard log未能找到有效信息，只能确定上层的关机流程已经跑完了。怀疑内核卡死在关机流程！需要ramdump辅助分析，而此时系统并没有crash,adb也不能用,需要硬件级别触发ramdump。把电源键长按功能定制为进入ramdump。将dtsi以下代码（长安重启）删除！</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">&amp;spmi_bus &#123;</span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment">  qcom,pm660@0 &#123;</span></span><br><span class="line"><span class="comment">    compatible = "qcom,spmi-pmic";</span></span><br><span class="line"><span class="comment">    qcom,power-on@800 &#123;</span></span><br><span class="line"><span class="comment">      compatible = "qcom,qpnp-power-on";  </span></span><br><span class="line"><span class="comment">      qcom,pon_1 &#123;</span></span><br><span class="line"><span class="comment">        qcom,pon-type = &lt;0&gt;;</span></span><br><span class="line"><span class="comment">        qcom,pull-up = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        linux,code = &lt;116&gt;;</span></span><br><span class="line"><span class="comment">        qcom,support-reset = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s1-timer = &lt;6720&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-timer = &lt;2000&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-type = &lt;7&gt;;</span></span><br><span class="line"><span class="comment">      &#125;;</span></span><br><span class="line"><span class="comment">    &#125;;</span></span><br><span class="line"><span class="comment">  &#125;;</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>重新复现问题，问题复现后，连接电脑，打开QFIL Configuration，长按power键，进dump后抓出ram dump！</p>
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="问题定位"><a href="#问题定位" class="headerlink" title="问题定位"></a>问题定位</h4><p>拿到ramdump后，使用crash-utility工具解析出来，开始分析。首先，查看8个cpu的就绪队列上只有idle进程。系统空闲，这也符合关机过程的负载情况，但是其他所有进程却都没有拿到CPU资源，比如关机流程这个时候正常的话应该持有cpu资源吧！</p>
+<p>查看是不是有可以的D状态进程！比较可疑的几个我们用红色字母标记出来！！特别是这个init进程是首要的分析对象，因为android世界里所有的关机、重启流程都统一由init进程发起底层流程！所以内核的关机流程应该是运行在init进程空间里面！</p>
+<p><img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/disk-sleep-process.PNG" alt="D状态进程"></p>
+<p>先看看init进程的现场，和回溯上的关键函数device_shutdown的反汇编代码。在我们case中是跑的路径1。也就是说当前shutdown的设备存在父设备，这里要对父设备进行上锁。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/init-process.PNG" alt="init进程"></p>
+<p>看看对应的C代码，这里我们要找出parent的地址，进而找出这个mutex锁！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-mutex.PNG" alt="目标锁"></p>
+<p>检查struct device结构体，mutex的偏移0x60，和我们当前case的执行路径代码流程对应一致。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-device.PNG" alt="device和mutex的关系"></p>
+<h4 id="锁的推导"><a href="#锁的推导" class="headerlink" title="锁的推导"></a>锁的推导</h4><p>通常情况下对于变量的推导，可以从当前函数往前或者往后去推导。</p>
+<p>往前推导：从device_shutdown函数的C代码可以看到dev和parent是局部变量，我们断定可以下这个函数的栈帧中找到这两个变量。但是这个案例中，看看当前init进程堆栈中device_shutdown函数的详细堆栈情况。函数汇编代码我看起来有点吃力，不知道是不是代码被优化过了，device_shutdown函数的栈帧似乎并没有用来存储本地局部变量！能力有限，放弃往前推导。</p>
+<p>往后推导：mutex_lock函数接收一个参数，就是metux。我们看看往后能不能拿到这个锁的地址，进而找到parent这个device！mutex_lock函数中接收的x0就是这个mutex，红色1中x0会赋值给x19，然后红色2调用__ mutex_lock_slowpath函数，由于 __ mutex_lock_slowpath函数需要用到想x19，所以x19会先被保存在__mutex_lock_slowpath的栈帧当中，如红色3所示！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/flow1.PNG" alt="上锁流程1"></p>
+<p>看看__mutex_lock_slowpath函数栈帧偏移16的红框位置中应该就是被保存的x19，也就是mutex！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/mutex-found.PNG" alt="mutex地址"></p>
+<p>通过mutex在struct device结构体中的偏移，我们就可以知道这个parent的地址为多少。parent的地址为ffffffcbf3a3b070 – 0x60 = ffffffcbf3a3b010，看看这个device的关键信息。对应的内核对象名字可以猜测是哪个模块的设备，mutex可以看到当前锁的owner（就是锁的持有者），还有可以看出哪些进程正在等待这个锁！下面我们一一分析！</p>
+<h4 id="死锁原因"><a href="#死锁原因" class="headerlink" title="死锁原因"></a>死锁原因</h4><p>前面我们已经找到了目标设备和目标锁的地址。看看我们关心的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/key-info.PNG" alt="关键信息"></p>
+<p>在内核代码搜索kobj名字，可以看到当前是在shutdown的模块是audio codecs：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-module.PNG" alt="问题模块"></p>
+<p>通过锁的owner可以查看，当前这个锁的持有者是kworker/7这个进程：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-owner.PNG" alt="锁的持有者"></p>
+<p>通过wait_list我们看看有哪些进程在等待这个锁。再次确认kworker/7是持有者，init是等待者！也就是我们的问题所在。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-waiter.PNG" alt></p>
+<p>现在需要进一步找出kworker/7为什么不释放这个锁，找到原因，问题也就可以解决了。同样的方法我们直接找出这个进程所等待的另一个锁ffffffcbf3a3c178。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-mutex.PNG" alt="问题锁"></p>
+<p>看看谁在持有了这个锁，发现是kworker/7自己持有了！！也就是说可能出现重复加锁的状态了，也就是嵌套申请同一个的情况锁！往前看kworker/7的回溯， 应该是在__msm_sdw_page_write函数中需要上这个锁，把对应的汇编和C代码拉出来！就是红圈标志的这个锁！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-lock-fail.PNG" alt="上锁等待"></p>
+<p>通过回溯中一级一级函数往回找，看看哪级函数有申请这个锁的，主要关注msm_sdw这部分的函数。尝试通过代码和回溯的栈内容来找到这个锁的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-trace.PNG" alt="问题回溯"></p>
+<p>找了半天没有找到相关函数有申请这个锁的！怀疑是这个过程中有某些函数调用没有正确释放锁就返回导致的。结合kmsg，直接在相关模块搜索这个锁名字，看看所有有使用这个锁的函数！运气不错~<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-code.PNG" alt="问题代码"></p>
+<h2 id="思路总结"><a href="#思路总结" class="headerlink" title="思路总结"></a>思路总结</h2><p>整个过程基本上说明的内核死锁的基本分析方法。得益于crash-utility的强大的命令。像struct、list等在此问题的分析上起到很多的作用。当然也需要具备一些内核的基础知识、arm汇编等。需要保持学习！</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" data-id="cjvtfyo25000bpkiiog251vlj" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战-稳定性-Linux/">实战 - 稳定性 - Linux</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+  
+    <a href="/2019/05/19/Android-stability-study/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Android稳定性基础知识</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">3</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战-稳定性-Linux/">实战 - 稳定性 - Linux</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">4</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Android/" style="font-size: 13.33px;">Android</a> <a href="/tags/Linux/" style="font-size: 13.33px;">Linux</a> <a href="/tags/学习/" style="font-size: 16.67px;">学习</a> <a href="/tags/实战/" style="font-size: 10px;">实战</a> <a href="/tags/实战-稳定性-Linux/" style="font-size: 10px;">实战 - 稳定性 - Linux</a> <a href="/tags/稳定性/" style="font-size: 20px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/19/Android-stability-study/">Android稳定性基础知识</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/17/Arm-linux-hw-breakpoint/">Arm Linux硬件断点调试</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/16/Linux-kernel-slub-debug/">Linux内核slub使用与调试</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/08/Android-frameworks-reference-table-overflow/">framwork全局符号表溢出问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>
