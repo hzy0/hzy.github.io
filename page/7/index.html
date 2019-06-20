@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta property="og:type" content="website">
+<meta property="og:title" content="JoyYoung&#39;s blog">
+<meta property="og:url" content="http://yoursite.com/page/7/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:locale" content="default">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="JoyYoung&#39;s blog">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main">
+  
+    <article id="post-Arm-linux-hw-breakpoint" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/05/17/Arm-linux-hw-breakpoint/" class="article-date">
+  <time datetime="2019-05-17T11:41:00.000Z" itemprop="datePublished">2019-05-17</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/05/17/Arm-linux-hw-breakpoint/">Arm Linux硬件断点调试</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h3><p>很多cpu已经支持对外提供针对某个内存地址读写动作的监听，Arm系列很多也都支持。Linux基于此开发了相关的接口工我们调试使用。我们将通过kernel/samples/hw_breakpoint这个例子来学习如何利用Arm linux内核支持的硬件断点来检测调试一些稳定性问题。</p>
+<h3 id="环境"><a href="#环境" class="headerlink" title="环境"></a>环境</h3><p>linux4.4，高通sdm660</p>
+<h3 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h3><ul>
+<li>arch/arm64/Kconfig.debug–&gt;开启硬件断点功能</li>
+<li>CONFIG_MODULE_SIG_FORCE –&gt;关闭所有模块签名检测</li>
+<li>其他的是编译指定samples的–&gt;这里是hw breakpoint</li>
+</ul>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">diff --git a/arch/arm64/Kconfig.debug b/arch/arm64/Kconfig.debug</span><br><span class="line">index <span class="number">441005f</span>.<span class="number">.266</span>fced <span class="number">100644</span></span><br><span class="line">--- a/arch/arm64/Kconfig.debug</span><br><span class="line">+++ b/arch/arm64/Kconfig.debug</span><br><span class="line">@@ <span class="number">-125</span>,<span class="number">6</span> +<span class="number">125</span>,<span class="number">13</span> @@ config KERNEL_TEXT_RDONLY</span><br><span class="line"> config ARM64_STRICT_BREAK_BEFORE_MAKE</span><br><span class="line"> 	<span class="keyword">bool</span> <span class="string">"Enforce strict break-before-make on page table updates "</span></span><br><span class="line"> </span><br><span class="line">+config HAVE_HW_BREAKPOINT</span><br><span class="line">+        <span class="keyword">bool</span> <span class="string">"Hardware Breakpoint support"</span></span><br><span class="line">+        <span class="keyword">default</span> y</span><br><span class="line">+        help</span><br><span class="line">+          If <span class="keyword">this</span> option is hardware breakpoint</span><br><span class="line">+          If in doubt, say N.</span><br><span class="line">+</span><br><span class="line"> source <span class="string">"drivers/hwtracing/coresight/Kconfig"</span></span><br><span class="line"> </span><br><span class="line"> endmenu</span><br><span class="line">diff --git a/arch/arm64/configs/zangya-perf_defconfig b/arch/arm64/configs/zangya-perf_defconfig</span><br><span class="line">index <span class="number">435</span>dceb.<span class="number">.20</span>d03bb <span class="number">100755</span></span><br><span class="line">--- a/arch/arm64/configs/zangya-perf_defconfig</span><br><span class="line">+++ b/arch/arm64/configs/zangya-perf_defconfig</span><br><span class="line">@@ <span class="number">-50</span>,<span class="number">7</span> +<span class="number">50</span>,<span class="number">7</span> @@ CONFIG_MODULE_UNLOAD=y</span><br><span class="line"> CONFIG_MODULE_FORCE_UNLOAD=y</span><br><span class="line"> CONFIG_MODVERSIONS=y</span><br><span class="line"> CONFIG_MODULE_SIG=y</span><br><span class="line">-CONFIG_MODULE_SIG_FORCE=y</span><br><span class="line">+#CONFIG_MODULE_SIG_FORCE=y</span><br><span class="line"> CONFIG_MODULE_SIG_SHA512=y</span><br><span class="line"> CONFIG_PARTITION_ADVANCED=y</span><br><span class="line"> CONFIG_ARCH_QCOM=y</span><br><span class="line">@@ <span class="number">-684</span>,<span class="number">4</span> +<span class="number">684</span>,<span class="number">7</span> @@ CONFIG_CRYPTO_CRC32_ARM64=y</span><br><span class="line"> CONFIG_QMI_ENCDEC=y</span><br><span class="line"> CONFIG_READ_TPINFO=y</span><br><span class="line"> CONFIG_ZANGYA_CAMERA=y</span><br><span class="line">-CONFIG_PTN36502=y</span><br><span class="line">\ No newline at end of file</span><br><span class="line">+CONFIG_PTN36502=y</span><br><span class="line">+#CONFIG_HAVE_HW_BREAKPOINT=y</span><br><span class="line">+CONFIG_SAMPLES=y</span><br><span class="line">+CONFIG_SAMPLE_HW_BREAKPOINT=m</span><br></pre></td></tr></table></figure>
+
+<h3 id="测试"><a href="#测试" class="headerlink" title="测试"></a>测试</h3><p>重新编译内核，拿到boot.img和data_breakpoint.ko。我们选择一个容易测试的全局变量（module_info）来测试。<br>   –&gt;烧录boot.img开机<br>   –&gt;系列指令：<br>      adb disable-verity<br>      adb reboot<br>      adb remount<br>      adb shell mkdir -p /vendor/lib/modules/breakpoint<br>      adb push data_breakpoint.ko /vendor/lib/modules/breakpoint<br>      adb shell insmod vendor/lib/modules/breakpoint/data_breakpoint.ko ksym=module_info<br>      adb shell cat sys/android_camera/module_info //触发读事件</p>
+<p>查看kernellog：sample_hbp_handler是例子中注册的回调，msm_sensor_module_id_show是我们cat指令处理函数。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I Hardware name: Qualcomm Technologies, Inc. SDM <span class="number">630</span> PM660 + <span class="function">PM660L <span class="title">MTP</span> <span class="params">(DT)</span></span></span><br><span class="line">01-31 21:08:04.409     0     0 I Call trace:  </span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea89f14&gt;] dump_backtrace+<span class="number">0x0</span>/<span class="number">0x1b4</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea8a0dc&gt;] show_stack+<span class="number">0x14</span>/<span class="number">0x1c</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eed5f1b4&gt;] dump_stack+<span class="number">0x8c</span>/<span class="number">0xac</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffffa0bf47e018&gt;] sample_hbp_handler+<span class="number">0x18</span>/<span class="number">0x40</span> [data_breakpoint]</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eeb73918&gt;] __perf_event_overflow+<span class="number">0x1bc</span>/<span class="number">0x20c</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eeb740b4&gt;] perf_swevent_overflow+<span class="number">0x50</span>/<span class="number">0x70</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eeb74188&gt;] perf_swevent_event+<span class="number">0xb4</span>/<span class="number">0xbc</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eeb74700&gt;] perf_bp_event+<span class="number">0x8c</span>/<span class="number">0xb0</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea951b0&gt;] watchpoint_handler+<span class="number">0x130</span>/<span class="number">0x230</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea80e28&gt;] do_debug_exception+<span class="number">0x4c</span>/<span class="number">0xcc</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : <span class="function">Exception <span class="title">stack</span><span class="params">(<span class="number">0xffffffdaf462f8e0</span> to <span class="number">0xffffffdaf462fa10</span>)</span></span></span><br><span class="line">01-31 21:08:04.409     0     0 I f8e0    : ffffffdabdb84000 0000008000000000 0000000082559000 ffffff97eed5e6cc</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f900    : <span class="number">0000000040400145</span> ffffff97f0c7d000 ffffffdb3e6da180 ffffffda94bf5e80</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f920    : ffffffdaf462f980 ffffff97ef8649e4 ffffffdaf462c000 <span class="number">0000008000000000</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f940    : <span class="number">0000000082559000</span> ffffff97eed5e6cc <span class="number">0000000040400145</span> ffffff97eea82934</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f960    : ffffffdb3e6d0060 ffffffdb3e6d4050 ffffff97efa3cbec ffffff97eecef950</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f980    : ffffffdb3e6d4040 ffffff97eea829b4 ffffffdaf462f9a0 <span class="number">9</span>ab727df0173610f</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f9a0    : ffffff97f0e28ad0 ffffffffffffffff ffffff97f0e28ad0 <span class="number">0000000000000000</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f9c0    : <span class="number">000000000000f</span>fff <span class="number">000000000000f</span>fff <span class="number">00000000f</span>fffffd8 <span class="number">0000000000000000</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I f9e0    : <span class="number">0000000000000000</span> <span class="number">0000000000000000</span> a7261b7b0cc829ff <span class="number">0000000000000001</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I fa00    : <span class="number">0101010101010101</span> <span class="number">0000000000000000</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea827a8&gt;] el1_dbg+<span class="number">0x18</span>/<span class="number">0x90</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eed6b940&gt;] vsnprintf+<span class="number">0x280</span>/<span class="number">0x52c</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eed6bdec&gt;] <span class="built_in">sprintf</span>+<span class="number">0x74</span>/<span class="number">0x94</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97ef23a428&gt;] msm_sensor_module_id_show+<span class="number">0x28</span>/<span class="number">0x40</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eed61f44&gt;] kobj_attr_show+<span class="number">0x18</span>/<span class="number">0x28</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eec44f28&gt;] sysfs_kf_seq_show+<span class="number">0xa0</span>/<span class="number">0x10c</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eec438fc&gt;] kernfs_seq_show+<span class="number">0x28</span>/<span class="number">0x30</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eebf1c20&gt;] seq_read+<span class="number">0x1a8</span>/<span class="number">0x3f8</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eec4411c&gt;] kernfs_fop_read+<span class="number">0x38</span>/<span class="number">0x16c</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eebd0138&gt;] __vfs_read+<span class="number">0x38</span>/<span class="number">0xf4</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eebd09f4&gt;] vfs_read+<span class="number">0x84</span>/<span class="number">0x128</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eebd1444&gt;] SyS_read+<span class="number">0x54</span>/<span class="number">0xa4</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : [&lt;ffffff97eea83170&gt;] el0_svc_naked+<span class="number">0x24</span>/<span class="number">0x28</span></span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : Dump <span class="built_in">stack</span> from sample_hbp_handler</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : module_info value is changed</span><br><span class="line"><span class="number">01</span><span class="number">-31</span> <span class="number">21</span>:<span class="number">08</span>:<span class="number">04.409</span>     <span class="number">0</span>     <span class="number">0</span> I         : CPU: <span class="number">1</span> PID: <span class="number">4150</span> Comm: cat Tainted: G        W   E   <span class="number">4.4</span><span class="number">.78</span>-perf+ #<span class="number">5</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h3><p>Arm linux hw breadkpoint 支持针对多个内存地址打上断点，检测类型可以是读、写、执行。目前还没有遇到真实的场景需要用到这项技术来进行调试。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/05/17/Arm-linux-hw-breakpoint/" data-id="cjx4rca3d0008t0iik11p7nqt" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/">Linux</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/学习/">学习</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+  
+
+
+  <nav id="page-nav">
+    
+    <a class="extend prev" rel="prev" href="/page/6/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><a class="page-number" href="/page/6/">6</a><span class="page-number current">7</span><a class="page-number" href="/page/8/">8</a><a class="page-number" href="/page/9/">9</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><a class="extend next" rel="next" href="/page/8/">Next &raquo;</a>
+  </nav>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 17.5px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 15px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/26/Android-sub-system-impletment/">实现一个简单的android子系统</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>

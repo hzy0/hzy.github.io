@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>高通watchdog驱动分析 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="了解android treable框架、HIDL基本知识、实现一个简单的hidl例子">
+<meta name="keywords" content="driver">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高通watchdog驱动分析">
+<meta property="og:url" content="http://yoursite.com/2019/05/22/Qcom-watchdog/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="了解android treable框架、HIDL基本知识、实现一个简单的hidl例子">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/05/22/Qcom-watchdog/workflow.PNG">
+<meta property="og:updated_time" content="2019-05-22T13:10:55.208Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="高通watchdog驱动分析">
+<meta name="twitter:description" content="了解android treable框架、HIDL基本知识、实现一个简单的hidl例子">
+<meta name="twitter:image" content="http://yoursite.com/2019/05/22/Qcom-watchdog/workflow.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Qcom-watchdog" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/05/22/Qcom-watchdog/" class="article-date">
+  <time datetime="2019-05-22T15:00:00.000Z" itemprop="datePublished">2019-05-22</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      高通watchdog驱动分析
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>Watchdog主要用于检测系统是否出现严重故障，如内核死锁、不合理死循环、CPU跑飞、CPU hang、严重的性能问题、调度问题等。Watchdog根据实现方式又可以分为硬件watchdog和软件watchdog。硬件watchdog有硬件电路支持，具有有更好的可靠性。</p>
+<p>Android系统中还有一套watchdog实现，也是使用软件实现的，用于检测SystemServer中各Service是否正常运行。平台产商一般也会实现内核watchdog驱动，作用于整个系统。这里我们主要学习下高通Android平台的watchdog驱动，了解其工作原理、流程和可能导致狗咬的原因。</p>
+<h2 id="分析"><a href="#分析" class="headerlink" title="分析"></a>分析</h2><p>高通的watchdog驱动实现主要是在/kernel/msm-4.9/drivers/soc/qcom/watchdog_v2.c中，流程不会太复杂。不做代码细节解释。主要看看相关配置、运行状态和流程。</p>
+<h5 id="设备树"><a href="#设备树" class="headerlink" title="设备树"></a>设备树</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">qcom,wdt@b017000 &#123;</span><br><span class="line">	compatible = <span class="string">"qcom,msm-watchdog"</span>;</span><br><span class="line">	reg = &lt;<span class="number">0xb017000</span> <span class="number">0x1000</span>&gt;;--------&gt;没有相关数据手册，不过从代码看就是wdog控制器的寄存器地址</span><br><span class="line">	reg-names = <span class="string">"wdt-base"</span>;</span><br><span class="line">	interrupts = &lt;<span class="number">0</span> <span class="number">3</span> <span class="number">0</span>&gt;, &lt;<span class="number">0</span> <span class="number">4</span> <span class="number">0</span>&gt;;---&gt;bark和bite中断，bite中断没有用，bite比bark多<span class="number">3</span>s应该是触发硬件重启</span><br><span class="line">	qcom,bark-time = &lt;<span class="number">11000</span>&gt;;--------&gt;狗叫超时时间</span><br><span class="line">	qcom,pet-time = &lt;<span class="number">9360</span>&gt;;----------&gt;喂狗线程</span><br><span class="line">	qcom,ipi-ping;-------------------&gt;喂狗线程是否探测cpu活性</span><br><span class="line">	qcom,wakeup-enable;--------------&gt;看门狗具有唤醒系统的能力，如果不具备唤醒能力的话，需要在系统睡眠时关闭看门狗，唤醒时再重新打开看门狗</span><br><span class="line">	status = <span class="string">"okay"</span>;</span><br><span class="line">	qcom,scandump-size = &lt;<span class="number">0x40000</span>&gt;;---&gt;mini ramdump相关具体细节不知</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h5 id="喂狗定时器"><a href="#喂狗定时器" class="headerlink" title="喂狗定时器"></a>喂狗定时器</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">TIMER_BASES[3][BASE_STD]: ffffffc07c6a3000</span><br><span class="line">  EXPIRES        TIMER_LIST     FUNCTION</span><br><span class="line">  4295448104  ffffffc0780db2e0  ffffff80c0e2b160  &lt;pet_task_wakeup&gt;</span><br></pre></td></tr></table></figure>
+
+<h5 id="喂狗线程"><a href="#喂狗线程" class="headerlink" title="喂狗线程"></a>喂狗线程</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">PID    PPID  CPU       TASK        ST  %MEM     VSZ    RSS  COMM</span><br><span class="line">50     2     3   ffffffc07863be00  IN   0.0       0      0  [msm_watchdog]</span><br></pre></td></tr></table></figure>
+
+<h5 id="狗叫中断"><a href="#狗叫中断" class="headerlink" title="狗叫中断"></a>狗叫中断</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">IRQ   IRQ_DESC/_DATA      IRQACTION      NAME</span><br><span class="line">67   ffffffc0780dae00  ffffffc078037300  "apps_wdog_bark"</span><br></pre></td></tr></table></figure>
+
+<p>中断描述信息：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br></pre></td><td class="code"><pre><span class="line">struct irq_desc &#123;</span><br><span class="line">  irq_common_data = &#123;</span><br><span class="line">    state_use_accessors = 4609, </span><br><span class="line">    handler_data = 0x0, </span><br><span class="line">    msi_desc = 0x0, </span><br><span class="line">    affinity = &#123;&#123;</span><br><span class="line">        bits = &#123;8&#125;</span><br><span class="line">      &#125;&#125;</span><br><span class="line">  &#125;, </span><br><span class="line">  irq_data = &#123;</span><br><span class="line">    mask = 0, </span><br><span class="line">    irq = 67, </span><br><span class="line">    hwirq = 35, </span><br><span class="line">    common = 0xffffffc0780dae00, </span><br><span class="line">    chip = 0xffffff80c267b7f0, </span><br><span class="line">    domain = 0xffffffc00d504e00, </span><br><span class="line">    parent_data = 0xffffffc0780c6000, </span><br><span class="line">    chip_data = 0x0</span><br><span class="line">  &#125;, </span><br><span class="line">  kstat_irqs = 0xffffff80c218cff4, </span><br><span class="line">  handle_irq = 0xffffff80c09420bc, </span><br><span class="line">  action = 0xffffffc078037300, </span><br><span class="line">  status_use_accessors = 1, --------------------------&gt;IRQ_TYPE_EDGE_RISING</span><br><span class="line">  core_internal_state__do_not_mess_with_it = 0, </span><br><span class="line">  depth = 0, </span><br><span class="line">  wake_depth = 0, </span><br><span class="line">  irq_count = 0, </span><br><span class="line">  last_unhandled = 0, </span><br><span class="line">  irqs_unhandled = 0, </span><br><span class="line">  threads_handled = &#123;</span><br><span class="line">    counter = 0</span><br><span class="line">  &#125;, </span><br><span class="line">  threads_handled_last = 0, </span><br><span class="line">  lock = &#123;</span><br><span class="line">    raw_lock = &#123;</span><br><span class="line">      owner = 9, </span><br><span class="line">      next = 9</span><br><span class="line">    &#125;, </span><br><span class="line">    magic = 3735899821, </span><br><span class="line">    owner_cpu = 4294967295, </span><br><span class="line">    owner = 0xffffffffffffffff</span><br><span class="line">  &#125;, </span><br><span class="line">  percpu_enabled = 0x0, </span><br><span class="line">  percpu_affinity = 0x0, </span><br><span class="line">  affinity_hint = 0x0, </span><br><span class="line">  affinity_notify = 0x0, </span><br><span class="line">  threads_oneshot = 0, </span><br><span class="line">  threads_active = &#123;</span><br><span class="line">    counter = 0</span><br><span class="line">  &#125;, </span><br><span class="line">  wait_for_threads = &#123;</span><br><span class="line">    lock = &#123;</span><br><span class="line">      &#123;</span><br><span class="line">        rlock = &#123;</span><br><span class="line">          raw_lock = &#123;</span><br><span class="line">            owner = 0, </span><br><span class="line">            next = 0</span><br><span class="line">          &#125;, </span><br><span class="line">          magic = 3735899821, </span><br><span class="line">          owner_cpu = 4294967295, </span><br><span class="line">          owner = 0xffffffffffffffff</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;, </span><br><span class="line">    task_list = &#123;</span><br><span class="line">      next = 0xffffffc0780daf00, </span><br><span class="line">      prev = 0xffffffc0780daf00</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;, </span><br><span class="line">  nr_actions = 1, </span><br><span class="line">  no_suspend_depth = 0, </span><br><span class="line">  cond_suspend_depth = 0, </span><br><span class="line">  force_resume_depth = 0, </span><br><span class="line">  dir = 0xffffffc078036200, </span><br><span class="line">  rcu = &#123;</span><br><span class="line">    next = 0x0, </span><br><span class="line">    func = 0x0</span><br><span class="line">  &#125;, </span><br><span class="line">  kobj = &#123;</span><br><span class="line">    name = 0xffffffc0780c0f80 &quot;67&quot;, </span><br><span class="line">    entry = &#123;</span><br><span class="line">      next = 0xffffffc0780daf40, </span><br><span class="line">      prev = 0xffffffc0780daf40</span><br><span class="line">    &#125;, </span><br><span class="line">    parent = 0xffffffc078634a00, </span><br><span class="line">    kset = 0x0, </span><br><span class="line">    ktype = 0xffffff80c263a910, </span><br><span class="line">    sd = 0xffffffc0780c3e88, </span><br><span class="line">    kref = &#123;</span><br><span class="line">      refcount = &#123;</span><br><span class="line">        counter = 1</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;, </span><br><span class="line">    state_initialized = 1, </span><br><span class="line">    state_in_sysfs = 1, </span><br><span class="line">    state_add_uevent_sent = 0, </span><br><span class="line">    state_remove_uevent_sent = 0, </span><br><span class="line">    uevent_suppress = 0</span><br><span class="line">  &#125;, </span><br><span class="line">  parent_irq = 0, </span><br><span class="line">  owner = 0x0, </span><br><span class="line">  name = 0x0</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h5 id="工作流程"><a href="#工作流程" class="headerlink" title="工作流程"></a>工作流程</h5><p>这里不是驱动探测和初始化流程，而是整个机制运行起来后的工作流程。<img src="/2019/05/22/Qcom-watchdog/workflow.PNG" alt="工作流程"></p>
+<h2 id="问题"><a href="#问题" class="headerlink" title="问题"></a>问题</h2><p>根据流程，大概可以想到一些可能发生dog bark大方向上的直接原因。主要是第一点，引发调度问题的原因非常多。</p>
+<ul>
+<li>喂狗定时器超时后，timer的执行体在ksoftirqd线程执行，如果ksoftirqd线程得不到及时的调度将引发问题。</li>
+<li>喂狗线程在ping cpu的时候不成功，会导致不能及时喂狗，引发问题。不过这个是cpu级别的问题了。</li>
+</ul>
+<p>曾经的一个例子，当时没有整理成文档，一些细节记不清楚。大概就是monkey测试的时候camera app发生crash后，cameraserver没有收到binder die的通知导致帧数据刷新线程没有退出，一直占据了cpu，导致ksoftirqd线程没能正常被调度导致的问题。而帧数据刷新线程的优先级为1、调度策略为FIFO；ksoftirqd的进程优先级为120、调度策略为NORMAL。这个问题通过增强app的稳健性和导入一个google的binder驱动相关的patch后没有再复现。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>watchdog机制对于系统异常的检测是很有用的，如我们前面所说，内核死锁、不合理死循环、CPU跑飞、CPU hang、严重的性能问题、调度问题都可能会表现为watchdog问题。watchdog将给我们提供一个问题现场，使我们可以结合crash ramdump对应具体问题进行深入而广泛的挖掘分析。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/05/22/Qcom-watchdog/" data-id="cjx4rca330005t0ii8q8vj24s" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/driver/">driver</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/05/25/Linux-global-data-overflow/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          全局数据踩踏问题
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">关机过程中死锁问题</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 17.5px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 15px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/26/Android-sub-system-impletment/">实现一个简单的android子系统</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>

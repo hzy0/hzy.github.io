@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>全局数据踩踏问题 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="记一次monkey测试过程中发生全局数据踩踏导致死机问题分析与解决过程">
+<meta name="keywords" content="实战,稳定性,Linux">
+<meta property="og:type" content="article">
+<meta property="og:title" content="全局数据踩踏问题">
+<meta property="og:url" content="http://yoursite.com/2019/05/25/Linux-global-data-overflow/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="记一次monkey测试过程中发生全局数据踩踏导致死机问题分析与解决过程">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/05/25/Linux-global-data-overflow/trace.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/25/Linux-global-data-overflow/details.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/05/25/Linux-global-data-overflow/code.PNG">
+<meta property="og:updated_time" content="2019-05-22T13:59:40.007Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="全局数据踩踏问题">
+<meta name="twitter:description" content="记一次monkey测试过程中发生全局数据踩踏导致死机问题分析与解决过程">
+<meta name="twitter:image" content="http://yoursite.com/2019/05/25/Linux-global-data-overflow/trace.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Linux-global-data-overflow" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/05/25/Linux-global-data-overflow/" class="article-date">
+  <time datetime="2019-05-25T15:47:44.000Z" itemprop="datePublished">2019-05-25</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      全局数据踩踏问题
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>Monkey测试过程中发生死机。</p>
+<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a><strong>初步排查</strong></h2><p>手机黑屏、连接电脑后察看设备管理器出现日amdump相关的端口；使用高通的QPST工具抓出ramdump，使用高通的QCAP工具解析出kernel的oops信息。回溯和相关现场如下：<img src="/2019/05/25/Linux-global-data-overflow/trace.PNG" alt="回溯"></p>
+<p><img src="/2019/05/25/Linux-global-data-overflow/details.PNG" alt="现场"></p>
+<p>oops一般是由软件自身bug导致的问题，通常和硬件无关！从oops的信息看内核camera模块在探测摄像头模组的时候访问了一个非法地址，如红色标注1所示 。这里有两个疑问：</p>
+<ul>
+<li>跑monkey的过程中怎么会探测camer模组？探测模组应该是开机过程中camera服务启动初始化hal的时候完成的。</li>
+<li>这个非法地址是怎么产生的？</li>
+</ul>
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="问题定位"><a href="#问题定位" class="headerlink" title="问题定位"></a>问题定位</h4><p>从oops的信息目前只能确定哪个模块的哪行代码除了问题，并不能找到导致问题的是谁、如何导致的！需要使用crash-utility解析ramdump，推倒还原问题现场。对于非法地址问题，通常是要先看看地址是否有什么特殊性；解析出来后我们首先看看这个非法地址（0a6179676e617a5f）,完全不是一个内核地址，并且很像一个字符串。我们使用ascii命令解析一下这个地址，发现是”zangya<nul>“；非常幸运，是我们熟悉的字眼。</nul></p>
+<p>把回溯中PC指针指向的代码拉出来，同时看看x19寄存器的值。完全匹配！<img src="/2019/05/25/Linux-global-data-overflow/code.PNG" alt="代码"></p>
+<p>至此我们基本可以确定是全局数据踩踏问题，可以按照全局数据区域踩踏的思路继续分析下去！由于推倒的过程涉及到camera驱动初始化流程，过程比较繁琐，这里我们就直接忽略！大概思路就是通过rd命令读取sctrl变量往前找到我们从地址解析出来的字符串、查看符号表的排布，找出s_ctrl这变量之前的哪个全局变量出了问题。</p>
+<p>这个例子中推测出module_info这个用来存储camera模组信息的字符串发生了溢出。而溢出的原因是字符串不够长导致的，并非代码逻辑问题。我们的模组信息采集是嵌在高通的初始化流程里面的，高通初始化流程已经做了反复初始化的保护！</p>
+<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>字符串定义的不够长导致！我们相应的修改module_info字符串的长度应该就可以解决这个问题了！总结一下就是：</p>
+<ul>
+<li>camera的探测初始化应该是在开机过程就完成的，为什么跑monkey的过程中会跑到camera的探测流程？<br>猜测是monkey过程中camera hardware service进程发生了crash重启，导致hal重新初始化，进而重新进行camera探测流程!由于字符串溢出的缘故，此时s_ctrl已经被破坏，导致引用s_ctrl的时候内核发生崩溃！</li>
+<li>按照猜测，试试kill 掉camera hardware service这个进程看看问题是否可以复现？<br>实验结果是kill 掉camera hardware service问题必现，这对于我们的修改方案有效性的验证很有帮助！</li>
+<li>对于此类问题，还好是比较有特点的；否则分析起来难度可能就比较大！所以定制模块代码的时候，需要谨慎考虑数组越界、字符串操作是否得当等问题！当然关于全局数据踩踏问题可以使用kasan来检测，不过目前我还没使用过它分析过问题，有必要的时候应该试试看。</li>
+</ul>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/05/25/Linux-global-data-overflow/" data-id="cjx4rca2i0001t0iimqhgcde1" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/">Linux</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/05/26/Android-sub-system-impletment/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          实现一个简单的android子系统
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/05/22/Qcom-watchdog/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">高通watchdog驱动分析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 17.5px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 15px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/26/Android-sub-system-impletment/">实现一个简单的android子系统</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>

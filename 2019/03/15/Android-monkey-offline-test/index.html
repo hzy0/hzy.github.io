@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>monkey离线测试受adb拖累问题 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="记一次monkey被杀问题的分析与解决过程">
+<meta name="keywords" content="实战,稳定性,Android">
+<meta property="og:type" content="article">
+<meta property="og:title" content="monkey离线测试受adb拖累问题">
+<meta property="og:url" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="记一次monkey被杀问题的分析与解决过程">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/log.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/do_stop.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/doKillProcessGroupOnce.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/define.PNG">
+<meta property="og:updated_time" content="2019-05-23T16:05:03.997Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="monkey离线测试受adb拖累问题">
+<meta name="twitter:description" content="记一次monkey被杀问题的分析与解决过程">
+<meta name="twitter:image" content="http://yoursite.com/2019/03/15/Android-monkey-offline-test/log.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Android-monkey-offline-test" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/03/15/Android-monkey-offline-test/" class="article-date">
+  <time datetime="2019-03-15T15:47:44.000Z" itemprop="datePublished">2019-03-15</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      monkey离线测试受adb拖累问题
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>Monkey测试过程中为到指定事件数monkey停止；测试命令如下：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">monkey --ignore-crashes --ignore-timeouts --kill-process-after-error --ignore-security-exceptions --throttle 500 -v -v -v -s 5 60000000 &gt; /sdcard/monkey_log.txt &amp;</span><br></pre></td></tr></table></figure>
+
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a><strong>分析过程</strong></h2><h4 id="初步分析"><a href="#初步分析" class="headerlink" title="初步分析"></a>初步分析</h4><p>拿到T卡log进行初步分析。根据monkey的原理和我们sdcard抓log的实现机制，我们先从log初步判定android是否发生过重启。Android重启一次就会生成一份对应时间戳的log，很明显我们案例中只有一份log，而且monkey停止的概率非常高，很多log都是这样：<img src="/2019/03/15/Android-monkey-offline-test/log.PNG" alt="log目录"></p>
+<h4 id="细节分析"><a href="#细节分析" class="headerlink" title="细节分析"></a>细节分析</h4><p>打开log查看monkey信息，只有monkey启动的信息，除此之外无任何先关的其他信息。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">07</span>:<span class="number">04</span>:<span class="number">19.893</span> <span class="number">16615</span> <span class="number">16615</span> D AndroidRuntime: Calling main entry com.android.commands.monkey.Monkey</span><br></pre></td></tr></table></figure>
+
+<p>查看monkey_log.txt文件中monkey专门的log；最后的log是这样的，monkey发完时间后休眠500毫秒，然后突然就没了，说明并不是正常的主动退出；极有可能monkey进程被杀。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">:Sending Key (ACTION_DOWN): 23    // KEYCODE_DPAD_CENTER</span><br><span class="line">:Sending Key (ACTION_UP): 23    // KEYCODE_DPAD_CENTER</span><br><span class="line">Sleeping for 500 milliseconds</span><br></pre></td></tr></table></figure>
+
+<p>我们的monkey是批量离线测试的，测试指令为如我们问题描述中给出的那样；这条指令忽略了app崩溃错误、超时错误、安全异常、事件数为60000000个、每个事件间隔500ms。从monkey的设计来看，monkey停止几乎就剩一种可能了，那就是android重启了；可惜我们这个案例并没有发生android重启！</p>
+<p>看看kernel log有没有monkey的信息，搜索关键字monkey并没有收到任何信息，如果是低内存杀，kernel log会打印被杀进程的名字，所以也可以排除LKM的问题。到此得重新思考一下各种其他的可能性了：除了android重启monkey会退出外，到底有没有其他的可能导致monkey退出或者停止？</p>
+<ul>
+<li>有没有可能monkey进程卡住了呢？拿到monkey停止的机器，ps查看monkey进程，找不到相关进程，说明不是这种可能，但可以确定monkey进程是消失了！</li>
+<li>monkey进程是消失了，是monkey自身发生crash了吗？如果是，那应该log中会突出crash的信息才对！再看看monkey的源码，几乎捕获了所有的异常！这是monkey的测试的目的而定的！</li>
+<li>到目前为止，monkey没有卡住；自身没有crash；没有主动退出；但是消失了，估计能想到的可能就是被杀死了。但是在main log和kernel log中都找了并没有找到monkey相关的信息！</li>
+</ul>
+<p>monkey到底是怎么被杀的？列举几种可能并一一排除：</p>
+<ul>
+<li>monkey自身crash导致被杀？上面的分析已经排除！</li>
+<li>低内存杀？也是在上面的分析中可以排除的了，低内存杀通常都能收到进程名！</li>
+<li>Init进程把monkey杀了？monkey启动后其实是个app，init可能杀monkey？没听说过，但是不能排除。</li>
+</ul>
+<p>由于自己的疏忽，这里绕了个大弯因为杀进程都是通过kill发送信号给目标进程来实现的，而且通常是信号9。所以就是想了个办法在内和中的send_signal和exit两个系统调用添加debug代码：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">int</span> __send_signal(<span class="keyword">int</span> sig, struct siginfo *info, struct task_struct *t,</span><br><span class="line">			<span class="keyword">int</span> group, <span class="keyword">int</span> from_ancestor_ns)</span><br><span class="line">&#123;</span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">sigpending</span> *<span class="title">pending</span>;</span></span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">sigqueue</span> *<span class="title">q</span>;</span></span><br><span class="line">	<span class="keyword">int</span> override_rlimit;</span><br><span class="line">	<span class="keyword">int</span> ret = <span class="number">0</span>, result;</span><br><span class="line">	</span><br><span class="line">    <span class="comment">//add start</span></span><br><span class="line">    <span class="keyword">char</span> *is_to_monkey = <span class="literal">NULL</span>;</span><br><span class="line">    is_to_monkey = <span class="built_in">strstr</span>(t-&gt;comm,<span class="string">"monkey"</span>);</span><br><span class="line">    <span class="keyword">if</span>(<span class="literal">NULL</span> != is_to_monkey &amp;&amp; <span class="number">9</span> == sig) &#123;</span><br><span class="line">	    pr_info(<span class="string">"current:PID:%d COMM:%s signal:%d \n"</span>,current-&gt;pid,current-&gt;comm,sig);</span><br><span class="line">	    pr_info(<span class="string">"target:PID:%d COMM:%s signal:%d \n"</span>,t-&gt;pid,t-&gt;comm,sig);</span><br><span class="line">	    <span class="comment">//dump_stack();</span></span><br><span class="line">	    panic(<span class="string">"kill-monkey"</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//add end</span></span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">do_exit</span><span class="params">(<span class="keyword">long</span> code)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="class"><span class="keyword">struct</span> <span class="title">task_struct</span> *<span class="title">tsk</span> = <span class="title">current</span>;</span></span><br><span class="line">	<span class="keyword">int</span> group_dead;</span><br><span class="line">	<span class="keyword">char</span> *is_monkey = <span class="literal">NULL</span>;<span class="comment">//add here</span></span><br><span class="line">	TASKS_RCU(<span class="keyword">int</span> tasks_rcu_i);</span><br><span class="line"></span><br><span class="line">    profile_task_exit(tsk);</span><br><span class="line"></span><br><span class="line">    WARN_ON(blk_needs_flush_plug(tsk));</span><br><span class="line"></span><br><span class="line">    <span class="comment">//add start </span></span><br><span class="line">    is_monkey = <span class="built_in">strstr</span>(tsk-&gt;comm,<span class="string">"monkey"</span>);</span><br><span class="line">    <span class="keyword">if</span>(<span class="literal">NULL</span> != is_monkey) &#123;</span><br><span class="line">	    pr_info(<span class="string">"dump stack:PID:%d COMM:%s exit code:%ld \n"</span>,tsk-&gt;pid,tsk-&gt;comm,code);</span><br><span class="line">	    dump_stack();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//add end</span></span><br><span class="line">    ..............</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>重新复现问题，手机进入dump；log如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">14,4384,200042819,-;init: Sending signal 9 to service 'adbd' (pid 2910) process group...</span><br><span class="line"><span class="number">6</span>,<span class="number">4385</span>,<span class="number">200043296</span>,-;current:PID:<span class="number">1</span> COMM:init signal:<span class="number">9</span> </span><br><span class="line"><span class="number">6</span>,<span class="number">4386</span>,<span class="number">200043302</span>,-;target:PID:<span class="number">5999</span> COMM:commands.monkey signal:<span class="number">9</span> </span><br><span class="line"><span class="number">4</span>,<span class="number">4387</span>,<span class="number">200043313</span>,-;CPU: <span class="number">3</span> PID: <span class="number">1</span> Comm: init Tainted: G        W       <span class="number">4.4</span><span class="number">.78</span>-perf+ #<span class="number">6</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4388</span>,<span class="number">200043317</span>,-;Hardware name: Qualcomm Technologies, Inc. SDM <span class="number">636</span> PM660 + <span class="function">PM660L <span class="title">MTP</span> <span class="params">(DT)</span></span></span><br><span class="line">4,4389,200043322,-;Call trace:</span><br><span class="line"><span class="number">4</span>,<span class="number">4390</span>,<span class="number">200043342</span>,-;[&lt;ffffff8aa2089108&gt;] dump_backtrace+<span class="number">0x0</span>/<span class="number">0x1b4</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4391</span>,<span class="number">200043351</span>,-;[&lt;ffffff8aa20892d0&gt;] show_stack+<span class="number">0x14</span>/<span class="number">0x1c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4392</span>,<span class="number">200043363</span>,-;[&lt;ffffff8aa234fdb4&gt;] dump_stack+<span class="number">0x8c</span>/<span class="number">0xac</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4393</span>,<span class="number">200043376</span>,-;[&lt;ffffff8aa20aed5c&gt;] __send_signal.constprop<span class="number">.28</span>+<span class="number">0x7c</span>/<span class="number">0x338</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4394</span>,<span class="number">200043383</span>,-;[&lt;ffffff8aa20afa5c&gt;] do_send_sig_info+<span class="number">0x5c</span>/<span class="number">0x9c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4395</span>,<span class="number">200043389</span>,-;[&lt;ffffff8aa20afd9c&gt;] group_send_sig_info+<span class="number">0x74</span>/<span class="number">0x9c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4396</span>,<span class="number">200043394</span>,-;[&lt;ffffff8aa20afe14&gt;] __kill_pgrp_info+<span class="number">0x50</span>/<span class="number">0x84</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4397</span>,<span class="number">200043401</span>,-;[&lt;ffffff8aa20b1c94&gt;] SyS_kill+<span class="number">0xec</span>/<span class="number">0x1b0</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4398</span>,<span class="number">200043407</span>,-;[&lt;ffffff8aa2083130&gt;] el0_svc_naked+<span class="number">0x24</span>/<span class="number">0x28</span></span><br><span class="line"><span class="number">6</span>,<span class="number">4399</span>,<span class="number">200044104</span>,-;dump <span class="built_in">stack</span>:PID:<span class="number">5999</span> COMM:commands.monkey <span class="built_in">exit</span> code:<span class="number">9</span> </span><br><span class="line"><span class="number">4</span>,<span class="number">4400</span>,<span class="number">200044114</span>,-;CPU: <span class="number">2</span> PID: <span class="number">5999</span> Comm: commands.monkey Tainted: G        W       <span class="number">4.4</span><span class="number">.78</span>-perf+ #<span class="number">6</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4401</span>,<span class="number">200044119</span>,-;Hardware name: Qualcomm Technologies, Inc. SDM <span class="number">636</span> PM660 + <span class="function">PM660L <span class="title">MTP</span> <span class="params">(DT)</span></span></span><br><span class="line">4,4402,200044123,-;Call trace:</span><br><span class="line"><span class="number">4</span>,<span class="number">4403</span>,<span class="number">200044135</span>,-;[&lt;ffffff8aa2089108&gt;] dump_backtrace+<span class="number">0x0</span>/<span class="number">0x1b4</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4404</span>,<span class="number">200044141</span>,-;[&lt;ffffff8aa20892d0&gt;] show_stack+<span class="number">0x14</span>/<span class="number">0x1c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4405</span>,<span class="number">200044151</span>,-;[&lt;ffffff8aa234fdb4&gt;] dump_stack+<span class="number">0x8c</span>/<span class="number">0xac</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4406</span>,<span class="number">200044158</span>,-;[&lt;ffffff8aa20a3e20&gt;] do_exit+<span class="number">0xa8</span>/<span class="number">0x908</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4407</span>,<span class="number">200044164</span>,-;[&lt;ffffff8aa20a59f0&gt;] do_group_exit+<span class="number">0x44</span>/<span class="number">0x9c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4408</span>,<span class="number">200044171</span>,-;[&lt;ffffff8aa20b0a88&gt;] get_signal+<span class="number">0x4e8</span>/<span class="number">0x524</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4409</span>,<span class="number">200044177</span>,-;[&lt;ffffff8aa2087ea0&gt;] do_signal+<span class="number">0xac</span>/<span class="number">0x93c</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4410</span>,<span class="number">200044183</span>,-;[&lt;ffffff8aa2088a0c&gt;] do_notify_resume+<span class="number">0x18</span>/<span class="number">0x54</span></span><br><span class="line"><span class="number">4</span>,<span class="number">4411</span>,<span class="number">200044190</span>,-;[&lt;ffffff8aa2083030&gt;] work_pending+<span class="number">0x10</span>/<span class="number">0x14</span></span><br></pre></td></tr></table></figure>
+
+<p>查看init回溯，刚好以group组织在杀掉进程组，应该就是adbd。所以说是绕了个大弯，本来怀疑init把monkey杀了！忘记搜索monkey的pid了，看看monkey的pid为16615。赶紧搜索下，main log还是搜索不到什么关键信息的，但是kernel log中找了，真的被init杀死了！</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">14,4769,922292796,-;init: Sending signal 9 to service 'adbd' (pid 16113) process group...</span><br><span class="line"><span class="number">14</span>,<span class="number">4770</span>,<span class="number">922332905</span>,-;init: Successfully killed process cgroup uid <span class="number">0</span> pid <span class="number">16113</span> in <span class="number">40</span>ms</span><br><span class="line">14,4771,922335081,-;init: Service 'adbd' (pid 16113) killed by signal 9</span><br><span class="line"><span class="number">14</span>,<span class="number">4772</span>,<span class="number">922361680</span>,-;init: Untracked pid <span class="number">16615</span> killed by signal <span class="number">9</span></span><br></pre></td></tr></table></figure>
+
+<p>多抓几分log，好像都是这样，init 杀adbd 进程组后便杀了monkey！init为什么杀了monkey？monkey跟adbd还有什么关联吗？monkey是否跟杀adbd有关？按道理我们的指令是后台执行的啊，monkey作为sh的子进程以独立进程的方式运行的啊！还能跟adbd有啥关系？</p>
+<p>当我们断开usb的时候sh被杀，monkey被init接管；理论上monkey不属于adbd进程的group了！</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">shell        12746     1 4090472  46264 futex_wait_queue_me 73149f2c70 S com.android.commands.monkey</span><br></pre></td></tr></table></figure>
+
+<p>这里到底是不是真的有其他的关联？先看看代码，adbd为啥被杀，怎么杀！从log可以看到adbd被杀的直接原因：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">14,4762,922273399,-;init: processing action (sys.usb.config=none &amp;&amp; sys.usb.configfs=1) from (/init.usb.configfs.rc:1)这里这个触发器会stop adbd</span><br></pre></td></tr></table></figure>
+
+<p>这是android标准的设计，看看init的stop怎么实现的：</p>
+<p><img src="/2019/03/15/Android-monkey-offline-test/do_stop.PNG" alt="do_stop函数"></p>
+<p><img src="/2019/03/15/Android-monkey-offline-test/doKillProcessGroupOnce.PNG" alt="doKillProcessGroupOnce函数"></p>
+<p>通过继续阅读代码发现这里所指的group并不是我们linux进程管理中的进程组的方式划分的。按照linux标准的进程管理的话， monkey确实不在adbd领导的进程组里面的了！但是这里所指的是cgroup，属于acct cgourp，android用于cpu运行统计的！</p>
+<p><img src="/2019/03/15/Android-monkey-offline-test/define.PNG" alt="定义"></p>
+<p>查看monkey的cgroup信息：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">XXXXXX_sprout:/acct/uid_0 # cat /proc/5826/cgroup</span><br><span class="line">4:cpuset:/</span><br><span class="line">3:cpu:/</span><br><span class="line">2:schedtune:/</span><br><span class="line">1:cpuacct:/uid_0/pid_913</span><br></pre></td></tr></table></figure>
+
+<p>查看adbd的cgroup信息：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">XXXXXX_sprout:/acct/uid_0 # cat /proc/913/cgroup</span><br><span class="line">4:cpuset:/</span><br><span class="line">3:cpu:/</span><br><span class="line">2:schedtune:/</span><br><span class="line">1:cpuacct:/uid_0/pid_913</span><br></pre></td></tr></table></figure>
+
+<p>Monkey果然在adbd的这个acct cgroup里面，通过以下指令可以也找到monkey的pid就在其中：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">adb shell cat /acct/uid_0/pid_913/cgroup.procs</span><br></pre></td></tr></table></figure>
+
+<p>到此问题已经清楚，monkey受到adbd拖累被杀导致大概率monkey停止问题！至于为什么sys.usb.config=none &amp;&amp; sys.usb.configfs=1这个触发器会被触发，这个跟usb定制有关系，就不进一步分析了！</p>
+<p>想了个办法避免这种情况：尝试将monkey脱离adbd的cgroup，专门为monkey进程创建一个cgroup。然后monkey启动的时候通过先设置pid属性，在设置状态属性，init进程将monkey迁移到random_test这个cgroup里面！</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">on property:sys.monkey.state=1</span><br><span class="line">    mkdir /acct/uid_0/random_test</span><br><span class="line">    write /acct/uid_0/random_test/cgroup.procs $&#123;sys.monkey.pid&#125; </span><br><span class="line"></span><br><span class="line">on property:sys.monkey.state=0</span><br><span class="line">    rmdir /acct/uid_0/random_test</span><br></pre></td></tr></table></figure>
+
+<p>需要注意的是，这个方法在android O和android P上属性和selinux不同！</p>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><p>cgroup知识：<a href="https://www.cnblogs.com/arnoldlu/p/6208443.html" target="_blank" rel="noopener">https://www.cnblogs.com/arnoldlu/p/6208443.html</a></p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/03/15/Android-monkey-offline-test/" data-id="cjx4rca4l0011t0iijajcyqjd" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/03/20/Linux-process-management/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Linux内核进程管理基础
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/03/09/A-hang-issue-while-booting/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">卡在开机动画界面的一个案例分析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 17.5px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 15px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/26/Android-sub-system-impletment/">实现一个简单的android子系统</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>卡在开机动画界面的一个案例分析 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="记一次不开机问题的分析与解决过程">
+<meta name="keywords" content="实战,稳定性,Android">
+<meta property="og:type" content="article">
+<meta property="og:title" content="卡在开机动画界面的一个案例分析">
+<meta property="og:url" content="http://yoursite.com/2019/03/09/A-hang-issue-while-booting/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="记一次不开机问题的分析与解决过程">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/03/09/A-hang-issue-while-booting/audioserver.PNG">
+<meta property="og:updated_time" content="2019-05-23T16:51:22.464Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="卡在开机动画界面的一个案例分析">
+<meta name="twitter:description" content="记一次不开机问题的分析与解决过程">
+<meta name="twitter:image" content="http://yoursite.com/2019/03/09/A-hang-issue-while-booting/audioserver.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-A-hang-issue-while-booting" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/03/09/A-hang-issue-while-booting/" class="article-date">
+  <time datetime="2019-03-09T15:47:44.000Z" itemprop="datePublished">2019-03-09</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      卡在开机动画界面的一个案例分析
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>设置锁屏密码进行开关机压力测试，低概率出现输入密码后卡在开机动画，无法进入主界面。</p>
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="初步分析"><a href="#初步分析" class="headerlink" title="初步分析"></a>初步分析</h4><p>卡在开机动画问题,一般从systemserver入手。通过systemserver关键字，从log很容易就可以确定systemserver主线程卡在StartAudioService中；并且通过adb shell ps命令察看进程状态确认system_server的进程状态一直处于futex_wait_queue_me中。此问题同样需要trace协助定位具体问题，而user版本无法调试，需要userdeubg版本进行复现。</p>
+<h4 id="细节分析"><a href="#细节分析" class="headerlink" title="细节分析"></a>细节分析</h4><p>userdeubg复现到问题后，多次抓取systemserver的trace进行分析。主线程意料之中的卡在我们初步分析确定的点上：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">"main"</span> prio=<span class="number">5</span> tid=<span class="number">1</span> Native</span><br><span class="line">  | group=<span class="string">"main"</span> sCount=<span class="number">1</span> dsCount=<span class="number">0</span> flags=<span class="number">1</span> obj=<span class="number">0x7405e1c8</span> self=<span class="number">0x70f94c2a00</span></span><br><span class="line">  | sysTid=<span class="number">3506</span> nice=-<span class="number">2</span> cgrp=<span class="keyword">default</span> sched=<span class="number">0</span>/<span class="number">0</span> handle=<span class="number">0x717e1469a8</span></span><br><span class="line">  | state=S schedstat=( <span class="number">1482035801</span> <span class="number">167860621</span> <span class="number">1295</span> ) utm=<span class="number">123</span> stm=<span class="number">25</span> core=<span class="number">5</span> HZ=<span class="number">100</span></span><br><span class="line">  | stack=<span class="number">0x7fc46ba000</span>-<span class="number">0x7fc46bc000</span> stackSize=<span class="number">8</span>MB</span><br><span class="line">  | held mutexes=</span><br><span class="line">  kernel: __switch_to+<span class="number">0x94</span>/<span class="number">0xa0</span></span><br><span class="line">  kernel: futex_wait_queue_me+<span class="number">0xd8</span>/<span class="number">0x144</span></span><br><span class="line">  kernel: futex_wait+<span class="number">0xec</span>/<span class="number">0x200</span></span><br><span class="line">  kernel: do_futex+<span class="number">0xdc</span>/<span class="number">0x4e8</span></span><br><span class="line">  kernel: SyS_futex+<span class="number">0x110</span>/<span class="number">0x19c</span></span><br><span class="line">  kernel: __sys_trace_return+<span class="number">0x0</span>/<span class="number">0x4</span></span><br><span class="line">  native: #00 pc 000000000001dc6c  /system/lib64/libc.so (syscall+28)</span><br><span class="line">  native: #01 pc 00000000000689b4  /system/lib64/libc.so (__pthread_mutex_lock_with_timeout(pthread_mutex_internal_t*, bool, timespec const*)+264)</span><br><span class="line">  native: #02 pc 000000000003ca70  /system/lib64/libaudioclient.so (android::AudioSystem::get_audio_policy_service()+60)</span><br><span class="line">  native: #03 pc 000000000003f104  /system/lib64/libaudioclient.so (android::AudioSystem::setMasterMono(bool)+36)</span><br><span class="line">  native: #04 pc 0000000000148484  /system/lib64/libandroid_runtime.so (???)</span><br><span class="line">  native: #05 pc 00000000006d4118  /system/framework/arm64/boot-framework.oat (Java_android_media_AudioSystem_setMasterMono__Z+152)</span><br><span class="line">  at android.media.AudioSystem.setMasterMono(Native method)</span><br><span class="line">  at com.android.server.audio.AudioService.updateMasterMono(AudioService.java:<span class="number">1182</span>)</span><br><span class="line">  at com.android.server.audio.AudioService.readPersistedSettings(AudioService.java:<span class="number">1277</span>)</span><br><span class="line">  at com.android.server.audio.AudioService.&lt;init&gt;(AudioService.java:<span class="number">745</span>)</span><br><span class="line">  at com.android.server.audio.AudioService$Lifecycle.&lt;init&gt;(AudioService.java:<span class="number">619</span>)</span><br><span class="line">  at java.lang.reflect.Constructor.newInstance0(Native method)</span><br><span class="line">  at java.lang.reflect.Constructor.newInstance(Constructor.java:<span class="number">334</span>)</span><br><span class="line">  at com.android.server.SystemServiceManager.startService(SystemServiceManager.java:<span class="number">96</span>)</span><br></pre></td></tr></table></figure>
+
+<p>显然，这不是systemserver自身的问题。大概了解audio子系统的都知道audioservice其实完全依赖audioserver这个进程；我们需要看看audioserver这个服务进程的trace。对于这个问题，我们主要关心systemsever回溯最后是get_audio_policy_service()，在获取audio policy这个binder服务，所以我们先看看服务列表里面audio相关的服务，audio_policy接口描述为空！ </p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">XXXXXX:/ # service list | grep audio</span><br><span class="line">50      audio: []</span><br><span class="line">121     media.audio_policy: []</span><br><span class="line">122     media.audio_flinger: [android.media.IAudioFlinger]</span><br></pre></td></tr></table></figure>
+
+<p>也就是说audio_policy未能注册进系统，那我们主要看看audioserver进程的主线程trace。主线程正在注册audio policy服务，但是在启动的时候加载hal层的部件并等待完成。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">backtrace:</span><br><span class="line">    #<span class="number">00</span> pc <span class="number">000490</span>a0  /system/lib/libc.so (__ioctl+<span class="number">8</span>)</span><br><span class="line">    #<span class="number">01</span> pc <span class="number">0001e121</span>  /system/lib/libc.so (ioctl+<span class="number">32</span>)</span><br><span class="line">    #<span class="number">02</span> pc <span class="number">00010107</span>  /system/lib/libhwbinder.so (android::hardware::IPCThreadState::talkWithDriver(<span class="keyword">bool</span>)+<span class="number">202</span>)</span><br><span class="line">    #<span class="number">03</span> pc <span class="number">00010b</span>d7  /system/lib/libhwbinder.so (android::hardware::IPCThreadState::waitForResponse(android::hardware::Parcel*, <span class="keyword">int</span>*)+<span class="number">246</span>)</span><br><span class="line">    #<span class="number">04</span> pc <span class="number">0000e5</span>a1  /system/lib/libhwbinder.so (android::hardware::BpHwBinder::transact(<span class="keyword">unsigned</span> <span class="keyword">int</span>, android::hardware::Parcel <span class="keyword">const</span>&amp;, android::hardware::Parcel*, <span class="keyword">unsigned</span> <span class="keyword">int</span>, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::Parcel&amp;)&gt;)+<span class="number">36</span>)</span><br><span class="line">    #<span class="number">05</span> pc <span class="number">00045</span>a75  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BpHwDevicesFactory::_hidl_openDevice(android::hardware::IInterface*, android::hardware::details::HidlInstrumentor*, android::hardware::audio::V2_0::IDevicesFactory::Device, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::audio::V2_0::Result, android::sp&lt;android::hardware::audio::V2_0::IDevice&gt; <span class="keyword">const</span>&amp;)&gt;)+<span class="number">176</span>)</span><br><span class="line">    #<span class="number">06</span> pc <span class="number">00045</span>ec3  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BpHwDevicesFactory::openDevice(android::hardware::audio::V2_0::IDevicesFactory::Device, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::audio::V2_0::Result, android::sp&lt;android::hardware::audio::V2_0::IDevice&gt; <span class="keyword">const</span>&amp;)&gt;)+<span class="number">42</span>)</span><br><span class="line">    #<span class="number">07</span> pc <span class="number">000157</span>d5  /system/lib/libaudiohal.so (android::DevicesFactoryHalHidl::openDevice(<span class="keyword">char</span> <span class="keyword">const</span>*, android::sp&lt;android::DeviceHalInterface&gt;*)+<span class="number">76</span>)</span><br><span class="line">    #<span class="number">08</span> pc <span class="number">00010889</span>  /system/lib/libaudioflinger.so (android::AudioFlinger::loadHwModule_l(<span class="keyword">char</span> <span class="keyword">const</span>*)+<span class="number">76</span>)</span><br><span class="line">    #<span class="number">09</span> pc <span class="number">000144</span>cf  /system/lib/libaudioflinger.so (android::AudioFlinger::loadHwModule(<span class="keyword">char</span> <span class="keyword">const</span>*)+<span class="number">30</span>)</span><br><span class="line">    #<span class="number">10</span> pc <span class="number">0000</span>a87b  /system/lib/libaudiopolicyservice.so (android::AudioPolicyService::AudioPolicyClient::loadHwModule(<span class="keyword">char</span> <span class="keyword">const</span>*)+<span class="number">34</span>)</span><br><span class="line">    #<span class="number">11</span> pc <span class="number">0002526b</span>  /system/lib/libaudiopolicymanagerdefault.so (android::AudioPolicyManager::AudioPolicyManager(android::AudioPolicyClientInterface*)+<span class="number">798</span>)</span><br><span class="line">    #<span class="number">12</span> pc <span class="number">00007699</span>  /system/lib/libaudiopolicymanager.so (createAudioPolicyManager+<span class="number">16</span>)</span><br><span class="line">    #<span class="number">13</span> pc <span class="number">00004f</span>c7  /system/lib/libaudiopolicyservice.so (android::AudioPolicyService::onFirstRef()+<span class="number">274</span>)</span><br><span class="line">    #<span class="number">14</span> pc <span class="number">000018</span>cd  /system/bin/audioserver (android::BinderService&lt;android::AudioPolicyService&gt;::publish(<span class="keyword">bool</span>)+<span class="number">68</span>)</span><br><span class="line">    #<span class="number">15</span> pc <span class="number">000014</span>d3  /system/bin/audioserver (main+<span class="number">466</span>)</span><br><span class="line">    #<span class="number">16</span> pc <span class="number">00079851</span>  /system/lib/libc.so (__libc_init+<span class="number">48</span>)</span><br><span class="line">#<span class="number">17</span> pc <span class="number">00001220</span>  /system/bin/audioserver (_start_main+<span class="number">88</span>)</span><br></pre></td></tr></table></figure>
+
+<p>android8.0的版本之后，framework和hardware分离，各自运行在独立的进程中。所以加载hal模块的实际工作在audio hal service里面完成！可以从上面的回溯看出，audioserver主线程正在通过HIDL向audio hardware请求并等待结果，但是audio hardware一直没有返回。至此，我们还需要进一步查看audio hardware service进程的回溯！直接把audio hardware service 的trace拉出来分析：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br></pre></td><td class="code"><pre><span class="line">(<span class="number">1</span>).</span><br><span class="line"><span class="string">"HwBinder:757_5"</span> sysTid=<span class="number">2930</span></span><br><span class="line">  #<span class="number">00</span> pc <span class="number">0001901</span>c  /system/lib/libc.so (syscall+<span class="number">28</span>)</span><br><span class="line">  #<span class="number">01</span> pc <span class="number">00048145</span>  /system/lib/libc.so (__pthread_mutex_lock_with_timeout(<span class="keyword">pthread_mutex_internal_t</span>*, <span class="keyword">bool</span>, timespec <span class="keyword">const</span>*)+<span class="number">164</span>)</span><br><span class="line">  #<span class="number">02</span> pc <span class="number">00014b</span>a0  /vendor/lib/hw/audio.primary.sdm660.so (adev_open+<span class="number">92</span>)</span><br><span class="line">  #<span class="number">03</span> pc <span class="number">0001</span>af07  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::DevicesFactory::loadAudioInterface(<span class="keyword">char</span> <span class="keyword">const</span>*, audio_hw_device**)+<span class="number">62</span>)</span><br><span class="line">  #<span class="number">04</span> pc <span class="number">0001b</span>02b  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::DevicesFactory::openDevice(android::hardware::audio::V2_0::IDevicesFactory::Device, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::audio::V2_0::Result, android::sp&lt;android::hardware::audio::V2_0::IDevice&gt; <span class="keyword">const</span>&amp;)&gt;)+<span class="number">38</span>)</span><br><span class="line">  #<span class="number">05</span> pc <span class="number">000463</span>a7  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BnHwDevicesFactory::_hidl_openDevice(android::hidl::base::V1_0::BnHwBase*, android::hardware::Parcel <span class="keyword">const</span>&amp;, android::hardware::Parcel*, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::Parcel&amp;)&gt;)+<span class="number">170</span>)</span><br><span class="line">  #<span class="number">06</span> pc <span class="number">000466</span>cf  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BnHwDevicesFactory::onTransact(<span class="keyword">unsigned</span> <span class="keyword">int</span>, android::hardware::Parcel <span class="keyword">const</span>&amp;, android::hardware::Parcel*, <span class="keyword">unsigned</span> <span class="keyword">int</span>, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::Parcel&amp;)&gt;)+<span class="number">454</span>)</span><br><span class="line">  #<span class="number">07</span> pc <span class="number">0000</span>df07  /system/lib/vndk-sp/libhwbinder.so (android::hardware::BHwBinder::transact(<span class="keyword">unsigned</span> <span class="keyword">int</span>, android::hardware::Parcel <span class="keyword">const</span>&amp;, android::hardware::Parcel*, <span class="keyword">unsigned</span> <span class="keyword">int</span>, <span class="built_in">std</span>::__1::function&lt;<span class="keyword">void</span> (android::hardware::Parcel&amp;)&gt;)+<span class="number">66</span>)</span><br><span class="line">  #<span class="number">08</span> pc <span class="number">000105</span>df  /system/lib/vndk-sp/libhwbinder.so (android::hardware::IPCThreadState::executeCommand(<span class="keyword">int</span>)+<span class="number">610</span>)</span><br><span class="line">  #<span class="number">09</span> pc <span class="number">0001027</span>d  /system/lib/vndk-sp/libhwbinder.so (android::hardware::IPCThreadState::getAndExecuteCommand()+<span class="number">116</span>)</span><br><span class="line">  #<span class="number">10</span> pc <span class="number">00010817</span>  /system/lib/vndk-sp/libhwbinder.so (android::hardware::IPCThreadState::joinThreadPool(<span class="keyword">bool</span>)+<span class="number">38</span>)</span><br><span class="line">  #<span class="number">11</span> pc <span class="number">000175</span>ed  /system/lib/vndk-sp/libhwbinder.so (android::hardware::PoolThread::threadLoop()+<span class="number">12</span>)</span><br><span class="line">  #<span class="number">12</span> pc <span class="number">0000</span>d131  /system/lib/vndk-sp/libutils.so (android::Thread::_threadLoop(<span class="keyword">void</span>*)+<span class="number">144</span>)</span><br><span class="line">  #<span class="number">13</span> pc <span class="number">000479</span>ef  /system/lib/libc.so (__pthread_start(<span class="keyword">void</span>*)+<span class="number">22</span>)</span><br><span class="line">  #<span class="number">14</span> pc <span class="number">0001b</span>2ed  /system/lib/libc.so (__start_thread+<span class="number">32</span>)</span><br><span class="line">  <span class="keyword">static</span> <span class="keyword">int</span> adev_open(<span class="keyword">const</span> <span class="keyword">hw_module_t</span> *<span class="keyword">module</span>, <span class="keyword">const</span> <span class="keyword">char</span> *name,</span><br><span class="line">                     <span class="keyword">hw_device_t</span> **device)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">int</span> ret;</span><br><span class="line"></span><br><span class="line">    ALOGD(<span class="string">"%s: enter"</span>, __func__);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">strcmp</span>(name, AUDIO_HARDWARE_INTERFACE) != <span class="number">0</span>) <span class="keyword">return</span> -EINVAL;</span><br><span class="line"></span><br><span class="line">pthread_mutex_lock(&amp;adev_init_lock);<span class="comment">//等待锁</span></span><br><span class="line">....</span><br><span class="line">    </span><br><span class="line">(<span class="number">2</span>).</span><br><span class="line">  “HwBinder:<span class="number">757</span>_3” sysTid=<span class="number">1520</span></span><br><span class="line">  #<span class="number">00</span> pc <span class="number">0001901</span>c  /system/lib/libc.so (syscall+<span class="number">28</span>)</span><br><span class="line">  #<span class="number">01</span> pc <span class="number">00047</span>da3  /system/lib/libc.so (pthread_join+<span class="number">130</span>)</span><br><span class="line">  #<span class="number">02</span> pc <span class="number">0003</span>de04  /vendor/lib/hw/audio.primary.sdm660.so (audio_extn_spkr_prot_deinit+<span class="number">116</span>)</span><br><span class="line">  #<span class="number">03</span> pc <span class="number">00015630</span>  /vendor/lib/hw/audio.primary.sdm660.so (adev_close+<span class="number">104</span>)</span><br><span class="line">  #<span class="number">04</span> pc <span class="number">00019f</span>95  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::Device::~Device()+<span class="number">32</span>)</span><br><span class="line">  #<span class="number">05</span> pc <span class="number">0001</span>a05d  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::Device::~Device()+<span class="number">12</span>)</span><br><span class="line">  #<span class="number">06</span> pc <span class="number">0000</span>ac4b  /system/lib/vndk-sp/libutils.so (android::RefBase::decStrong(<span class="keyword">void</span> <span class="keyword">const</span>*) <span class="keyword">const</span>+<span class="number">66</span>)</span><br><span class="line">  #<span class="number">07</span> pc <span class="number">0001f</span>cfd  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::StreamOut::~StreamOut()+<span class="number">380</span>)</span><br><span class="line">  #<span class="number">08</span> pc <span class="number">0001f</span>e5d  /vendor/lib/hw/android.hardware.audio@<span class="number">2.0</span>-impl.so (android::hardware::audio::V2_0::implementation::StreamOut::~StreamOut()+<span class="number">12</span>)</span><br><span class="line">  #<span class="number">09</span> pc <span class="number">0000</span>ac4b  /system/lib/vndk-sp/libutils.so (android::RefBase::decStrong(<span class="keyword">void</span> <span class="keyword">const</span>*) <span class="keyword">const</span>+<span class="number">66</span>)</span><br><span class="line">  #<span class="number">10</span> pc <span class="number">00046</span>acf  /system/lib/vndk-sp/libhidltransport.so (android::hidl::base::V1_0::BnHwBase::~BnHwBase()+<span class="number">114</span>)</span><br><span class="line">  #<span class="number">11</span> pc <span class="number">00079e97</span>  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BnHwStreamOut::~BnHwStreamOut()+<span class="number">118</span>)</span><br><span class="line">  #<span class="number">12</span> pc <span class="number">00079f</span>39  /system/lib/android.hardware.audio@<span class="number">2.0</span>.so (android::hardware::audio::V2_0::BnHwStreamOut::~BnHwStreamOut()+<span class="number">12</span>)</span><br><span class="line">  #<span class="number">13</span> pc <span class="number">0000</span>ac4b  /system/lib/vndk-sp/libutils.so (android::RefBase::decStrong(<span class="keyword">void</span> <span class="keyword">const</span>*) <span class="keyword">const</span>+<span class="number">66</span>)</span><br><span class="line">  #<span class="number">14</span> pc <span class="number">000107</span>d9  /system/lib/vndk-sp/libhwbinder.so (android::hardware::IPCThreadState::processPendingDerefs()+<span class="number">80</span>)</span><br><span class="line">  #<span class="number">15</span> pc <span class="number">00010811</span>  /system/lib/vndk-sp/libhwbinder.so (android::hardware::IPCThreadState::joinThreadPool(<span class="keyword">bool</span>)+<span class="number">32</span>)</span><br><span class="line">  #<span class="number">16</span> pc <span class="number">000175</span>ed  /system/lib/vndk-sp/libhwbinder.so (android::hardware::PoolThread::threadLoop()+<span class="number">12</span>)</span><br><span class="line">  #<span class="number">17</span> pc <span class="number">0000</span>d131  /system/lib/vndk-sp/libutils.so (android::Thread::_threadLoop(<span class="keyword">void</span>*)+<span class="number">144</span>)</span><br><span class="line">  #<span class="number">18</span> pc <span class="number">000479</span>ef  /system/lib/libc.so (__pthread_start(<span class="keyword">void</span>*)+<span class="number">22</span>)</span><br><span class="line">  #<span class="number">19</span> pc <span class="number">0001b</span>2ed  /system/lib/libc.so (__start_thread+<span class="number">32</span>)</span><br><span class="line"><span class="keyword">static</span> <span class="keyword">int</span> adev_close(<span class="keyword">hw_device_t</span> *device)</span><br><span class="line">&#123;</span><br><span class="line">struct audio_device *adev = (struct audio_device *)device;</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> (!adev)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">pthread_mutex_lock(&amp;adev_init_lock);<span class="comment">//get the mutex here，持有锁</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> ((--audio_device_ref_count) == <span class="number">0</span>) &#123;</span><br><span class="line">        audio_extn_snd_mon_unregister_listener(adev);</span><br><span class="line">        audio_extn_sound_trigger_deinit(adev);</span><br><span class="line">        audio_extn_listen_deinit(adev);</span><br><span class="line">        audio_extn_utils_release_streams_cfg_lists(</span><br><span class="line">                      &amp;adev-&gt;streams_output_cfg_list,</span><br><span class="line">                      &amp;adev-&gt;streams_input_cfg_list);</span><br><span class="line">        <span class="keyword">if</span> (audio_extn_qaf_is_enabled())</span><br><span class="line">            audio_extn_qaf_deinit();</span><br><span class="line">        audio_route_free(adev-&gt;audio_route);</span><br><span class="line">        audio_extn_gef_deinit();</span><br><span class="line">        <span class="built_in">free</span>(adev-&gt;snd_dev_ref_cnt);</span><br><span class="line">        platform_deinit(adev-&gt;platform);<span class="comment">//wait spkr_calibration_thread exit here，等待spkr_calibration_thread线程退出！</span></span><br><span class="line">.....</span><br><span class="line">    </span><br><span class="line">(<span class="number">3</span>).</span><br><span class="line"><span class="string">"HwBinder:757_1"</span> sysTid=<span class="number">1506</span></span><br><span class="line">  #<span class="number">00</span> pc <span class="number">0001901</span>c  /system/lib/libc.so (syscall+<span class="number">28</span>)</span><br><span class="line">  #<span class="number">01</span> pc <span class="number">0004738b</span>  /system/lib/libc.so (__pthread_cond_timedwait(<span class="keyword">pthread_cond_internal_t</span>*, <span class="keyword">pthread_mutex_t</span>*, <span class="keyword">bool</span>, timespec <span class="keyword">const</span>*)+<span class="number">102</span>)</span><br><span class="line">  #<span class="number">02</span> pc <span class="number">0003f</span>938  /vendor/lib/hw/audio.primary.sdm660.so (spkr_calibration_thread+<span class="number">4280</span>)</span><br><span class="line">  #<span class="number">03</span> pc <span class="number">000479</span>ef  /system/lib/libc.so (__pthread_start(<span class="keyword">void</span>*)+<span class="number">22</span>)</span><br><span class="line">  #<span class="number">04</span> pc <span class="number">0001b</span>2ed  /system/lib/libc.so (__start_thread+<span class="number">32</span>)</span><br><span class="line">  </span><br><span class="line">  <span class="keyword">static</span> <span class="keyword">int</span> spkr_calibrate(<span class="keyword">int</span> t0_spk_1, <span class="keyword">int</span> t0_spk_2)</span><br><span class="line">&#123;</span><br><span class="line">......</span><br><span class="line"><span class="built_in">exit</span>:</span><br><span class="line">......</span><br><span class="line">        <span class="keyword">if</span> (!handle.cancel_spkr_calib &amp;&amp; cleanup) &#123;</span><br><span class="line">            pthread_mutex_unlock(&amp;handle.spkr_calib_cancelack_mutex);</span><br><span class="line">            pthread_cond_wait(&amp;handle.spkr_calib_cancel,</span><br><span class="line">            &amp;handle.mutex_spkr_prot); <span class="comment">// wait spkr_calib_cancel here!!!!!!!!!!!!!!!!!!!!!!!!!</span></span><br><span class="line">            pthread_mutex_lock(&amp;handle.spkr_calib_cancelack_mutex);</span><br><span class="line">        &#125;</span><br><span class="line">.....</span><br><span class="line"></span><br><span class="line">(<span class="number">4</span>).</span><br><span class="line">Handle.spkr_calib_cancel need audio_extn_spkr_prot_calib_cancel(void *adev) to signal, and only enable_snd_device do it</span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">enable_snd_device</span><span class="params">(struct audio_device *adev,</span></span></span><br><span class="line"><span class="function"><span class="params">                      <span class="keyword">snd_device_t</span> snd_device)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">…...</span><br><span class="line"><span class="keyword">if</span> (audio_extn_spkr_prot_is_enabled())</span><br><span class="line">         audio_extn_spkr_prot_calib_cancel(adev);<span class="comment">//only here will signal， 按高通的设计，只有此处会主动给spkr校准线程发现法让其退出！但是我们测试用例出现的情况下，此处不可能被调用！所以问题出现！</span></span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<p>通过以上回溯分析，我们整理一下问题的逻辑：<br>(1). systemserver : StartAudioServiceAudioSystem.setMasterMono  get_audio_policy_service<br>(2). Audioserver : AudioPolicyService::publish loadHwModule waitForResponse<br>(3).audio hardware service : 主线程在adev_open时等待全局锁adev_init_lock；1520线程在adev_close中已经先持有了adev_init_lock，并等待spkr_calibration_thread线程退出才能继续做反初始化；但是此时speaker校准线程spkr_calibration_thread却一直在等待spkr_calib_cancel信号没有退出。<br>(4). 为什么在android启动的过程中audio hardware service会有反初始化的动作？audioserver会重启hal层服务！但是这里framework为什么重启是因为android都开启了FDE的，流程在这里就不说了！<img src="/2019/03/09/A-hang-issue-while-booting/audioserver.PNG" alt="audioserver"></p>
+<p>为什么校准线程会进入等待spkr_calib_cancel的逻辑中？查看log可以看到有以下log，和代码逻辑相符：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">04</span><span class="number">-11</span> <span class="number">14</span>:<span class="number">36</span>:<span class="number">43.001</span>   <span class="number">757</span>  <span class="number">1506</span> D audio_hw_spkr_prot: spkr_calibrate: Speaker calibration done</span><br><span class="line"><span class="number">04</span><span class="number">-11</span> <span class="number">14</span>:<span class="number">36</span>:<span class="number">43.003</span>   <span class="number">757</span>  <span class="number">1506</span> E audio_hw_spkr_prot: spkr_calibrate: spkr_prot_thread get failed status <span class="number">-22</span></span><br></pre></td></tr></table></figure>
+
+<p>猜测此问题应该可以在apkr校准失败的情况下，重启android层必现，试验发现确实如此！找到必现路径可以用于修改方案的验证！这个问题分析过程中也一直跟audio的同时沟通，对于最后的解决方案：第一我们觉得这个校准失败的问题必须解决；同时我这边想了个办法，就是在FDE解密用户分区之前的最小framework启动过程（也就是用户输入密码前）不要启动进行speaker校准，等到解密重新挂在data分区成功，重启framework后的这次启动才进行speaker校准，这样就能避开这个问题。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>对于hang问题，我们通常会用到一些工具来辅助分析；比如，kill -3、debugged、addr2line等等。这个例子也是如此，所以掌握这些工具的基本用法是很有必要的。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/03/09/A-hang-issue-while-booting/" data-id="cjx4rca280000t0iigy3nkngb" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/03/15/Android-monkey-offline-test/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          monkey离线测试受adb拖累问题
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/03/01/Android-debug-tools/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Android调试工具整理</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 17.5px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 15px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/26/Android-sub-system-impletment/">实现一个简单的android子系统</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>
