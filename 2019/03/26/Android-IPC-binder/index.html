@@ -5,15 +5,29 @@
   
 
   
-  <title>JoyYoung&#39;s blog</title>
+  <title>Android binder机制学习 | JoyYoung&#39;s blog</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta property="og:type" content="website">
-<meta property="og:title" content="JoyYoung&#39;s blog">
-<meta property="og:url" content="http://yoursite.com/page/16/index.html">
+  <meta name="description" content="了解android IPC 之binder的实现">
+<meta name="keywords" content="Android,学习">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android binder机制学习">
+<meta property="og:url" content="http://yoursite.com/2019/03/26/Android-IPC-binder/index.html">
 <meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="了解android IPC 之binder的实现">
 <meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/main-structs.png">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/C:%5CUsers%5Chuangzaiyang1%5CAppData%5CRoaming%5CTypora%5Ctypora-user-images%5C1558928957638.png">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/manager-init.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/BpServiceManager.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/add-service-data.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/binder-proc.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/binder-buffers.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/binder_node-service.PNG">
+<meta property="og:updated_time" content="2019-07-02T14:40:49.496Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="JoyYoung&#39;s blog">
+<meta name="twitter:title" content="Android binder机制学习">
+<meta name="twitter:description" content="了解android IPC 之binder的实现">
+<meta name="twitter:image" content="http://yoursite.com/2019/03/26/Android-IPC-binder/main-structs.png">
   
   
     <link rel="icon" href="/favicon.png">
@@ -56,9 +70,7 @@
   </div>
 </header>
       <div class="outer">
-        <section id="main">
-  
-    <article id="post-Android-IPC-binder" class="article article-type-post" itemscope itemprop="blogPost">
+        <section id="main"><article id="post-Android-IPC-binder" class="article article-type-post" itemscope itemprop="blogPost">
   <div class="article-meta">
     <a href="/2019/03/26/Android-IPC-binder/" class="article-date">
   <time datetime="2019-03-26T15:00:00.000Z" itemprop="datePublished">2019-03-26</time>
@@ -71,8 +83,8 @@
       <header class="article-header">
         
   
-    <h1 itemprop="name">
-      <a class="article-title" href="/2019/03/26/Android-IPC-binder/">Android binder机制学习</a>
+    <h1 class="article-title" itemprop="name">
+      Android binder机制学习
     </h1>
   
 
@@ -239,16 +251,28 @@
     </footer>
   </div>
   
-</article>
-
+    
+<nav id="article-nav">
+  
+    <a href="/2019/04/02/Android-activity-impletment/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Android四大组件之Activity
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/03/20/Linux-process-management/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Linux内核进程管理基础</div>
+    </a>
+  
+</nav>
 
   
-
-
-  <nav id="page-nav">
-    
-    <a class="extend prev" rel="prev" href="/page/15/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/14/">14</a><a class="page-number" href="/page/15/">15</a><span class="page-number current">16</span><a class="page-number" href="/page/17/">17</a><a class="page-number" href="/page/18/">18</a><span class="space">&hellip;</span><a class="page-number" href="/page/21/">21</a><a class="extend next" rel="next" href="/page/17/">Next &raquo;</a>
-  </nav>
+</article>
 
 </section>
         
