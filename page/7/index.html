@@ -58,10 +58,10 @@
       <div class="outer">
         <section id="main">
   
-    <article id="post-Android-stability-study" class="article article-type-post" itemscope itemprop="blogPost">
+    <article id="post-Linux-kernel-deadlock-in-shutdown-flow" class="article article-type-post" itemscope itemprop="blogPost">
   <div class="article-meta">
-    <a href="/2019/05/19/Android-stability-study/" class="article-date">
-  <time datetime="2019-05-19T15:40:00.000Z" itemprop="datePublished">2019-05-19</time>
+    <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" class="article-date">
+  <time datetime="2019-05-20T15:47:44.000Z" itemprop="datePublished">2019-05-20</time>
 </a>
     
   </div>
@@ -72,7 +72,7 @@
         
   
     <h1 itemprop="name">
-      <a class="article-title" href="/2019/05/19/Android-stability-study/">Android稳定性基础知识</a>
+      <a class="article-title" href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
     </h1>
   
 
@@ -80,70 +80,39 @@
     
     <div class="article-entry" itemprop="articleBody">
       
-        <h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>对于Android系统来说，稳定性大体分为Framework/App Crash，Native Crash，以及Kernel Crash。当然也包括一些其他的子系统如adsp/modem/tz等，不过这不是我们学习的范围。</p>
-<ul>
-<li>对于framework层或者app层的Crash(即Java层面Crash)，那么往往是通过抛出未捕获异常而导致的Crash。这类crash在一些极限且不影响功能的前提下可以通过捕获异常获取非法判断来规避问题，但是大部分情况下还是要从业务逻辑和流程分析根本原因。这类异常涉及到很多业务逻辑的，通常依赖java的回溯去分析，不需要借助特殊的工具。</li>
-<li>Native Crash，即C/C++层面的Crash，这是介于系统framework层与Linux层之间的一层，比如jni或者一些native的服务。这类可能需要tombstone/coredump，借助gdb工具来帮忙分析问题。</li>
-<li>至于Kernel Crash，很多情况是发生Kernel panic，对于内核崩溃往往是驱动或者硬件出现故障。涉及到内核发生crash时内存取证和类似trace32或者crash-utility等工具。</li>
-</ul>
-<p>这里主要整理下分析native和kernel的crash问题一些基础知识。</p>
-<h3 id="Native-Crash"><a href="#Native-Crash" class="headerlink" title="Native Crash"></a>Native Crash</h3><ul>
-<li>手段：当native进程发生crash的时候，android的debuggerd守护进程会自动打印对应进程的信息信息到目录/data/tombstones/tombstone_xx文件，或者通过配置生成coredump调试信息。</li>
-<li>参考：<a href="http://gityuan.com/2016/06/25/android-native-crash/和http://source.android.com/devices/tech/debug/" target="_blank" rel="noopener">http://gityuan.com/2016/06/25/android-native-crash/和http://source.android.com/devices/tech/debug/</a></li>
-<li>案例：使用android源码中自带的crasher制作crash，学习分析。我们主要用到coredump和gdb</li>
-</ul>
-<h4 id="coredump"><a href="#coredump" class="headerlink" title="coredump"></a>coredump</h4><ul>
-<li>通常情况下 coredump 包含了程序运行时的内存，寄存器状态，堆栈指针，内存管理信息等，可以理解为把程序工作的当前状态存储成一个文件。Android 系统是基于Linux 内核，Linux 内核原生就支持这种机制。</li>
-<li>产生的原因很多，通常有：内存访问越界、 非法指针、堆栈溢出等。这些异常出现的时候系统会发出相对应的信号使程序退出。而这些信号也会触发生成程序的coredump信息。</li>
-</ul>
-<h4 id="crasher"><a href="#crasher" class="headerlink" title="crasher"></a>crasher</h4><p>执行命令mmm system/core/debuggerd/,将生成的crasher push到手机system/xbin目录下。查看crasher支持哪些命令：</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">root@xxxx:/data/core # crasher -h</span><br><span class="line">crasher -h</span><br><span class="line">crasher: built at 20:46:24!@</span><br><span class="line">crasher: init pid=11094 tid=11094</span><br><span class="line">crasher OP</span><br><span class="line">where OP is:</span><br><span class="line">  smash-stack           overwrite a stack-guard canary</span><br><span class="line">  stack-overflow        recurse until the stack overflows</span><br><span class="line">  heap-corruption       cause a libc abort by corrupting the heap</span><br><span class="line">  heap-usage            cause a libc abort by abusing a heap function</span><br><span class="line">  nostack               crash with a NULL stack pointer</span><br><span class="line">  ctest                 (obsoleted by thread-crash?)</span><br><span class="line">  exit                  call exit(1)</span><br><span class="line">  abort                 call abort()</span><br><span class="line">  assert                call assert() without a function</span><br><span class="line">  assert2               call assert() with a function</span><br><span class="line">  LOG_ALWAYS_FATAL      call LOG_ALWAYS_FATAL</span><br><span class="line">  LOG_ALWAYS_FATAL_IF   call LOG_ALWAYS_FATAL</span><br><span class="line">  SIGFPE                cause a SIGFPE</span><br><span class="line">  SIGPIPE               cause a SIGPIPE</span><br><span class="line">  SIGSEGV               cause a SIGSEGV at address 0x0 (synonym: crash)</span><br><span class="line">  SIGSEGV-non-null      cause a SIGSEGV at a non-zero address</span><br><span class="line">  SIGSEGV-unmapped      mmap/munmap a region of memory and then attempt to access it</span><br><span class="line">  SIGTRAP               cause a SIGTRAP</span><br><span class="line">prefix any of the above with 'thread-' to not run</span><br><span class="line">on the process' main thread.</span><br></pre></td></tr></table></figure>
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>手机通过OTG连接鼠标、键盘灯设备，概率出现关不了机。</p>
+<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a><strong>初步排查</strong></h2><p>手机黑屏、连接电脑没有adb口、按power2~4秒没有开机说明手机没有进入关机状态。Tcard log未能找到有效信息，只能确定上层的关机流程已经跑完了。怀疑内核卡死在关机流程！需要ramdump辅助分析，而此时系统并没有crash,adb也不能用,需要硬件级别触发ramdump。把电源键长按功能定制为进入ramdump。将dtsi以下代码（长安重启）删除！</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">&amp;spmi_bus &#123;</span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment">  qcom,pm660@0 &#123;</span></span><br><span class="line"><span class="comment">    compatible = "qcom,spmi-pmic";</span></span><br><span class="line"><span class="comment">    qcom,power-on@800 &#123;</span></span><br><span class="line"><span class="comment">      compatible = "qcom,qpnp-power-on";  </span></span><br><span class="line"><span class="comment">      qcom,pon_1 &#123;</span></span><br><span class="line"><span class="comment">        qcom,pon-type = &lt;0&gt;;</span></span><br><span class="line"><span class="comment">        qcom,pull-up = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        linux,code = &lt;116&gt;;</span></span><br><span class="line"><span class="comment">        qcom,support-reset = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s1-timer = &lt;6720&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-timer = &lt;2000&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-type = &lt;7&gt;;</span></span><br><span class="line"><span class="comment">      &#125;;</span></span><br><span class="line"><span class="comment">    &#125;;</span></span><br><span class="line"><span class="comment">  &#125;;</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
 
-<p>通过执行crasher 异常参数产生所有的coredump文件，并进行重新命名，因为coredump文件名中包含“！”，gdb加载时会失败报错。使用android版本的gdb分析以上案例。基本步骤：</p>
-<ul>
-<li>运行GDB （android源码中）</li>
-<li>加载带符号的可执行文件（file 命令）</li>
-<li>设置so库搜索路径（set solib-search-path）</li>
-<li>加载coredump文件 （core-file命令）</li>
-<li>查看回溯（backtrace，bt命令），定位具体出错代码</li>
-<li>查看寄存器（info registers命令）</li>
-<li>查看某个内存地址附近内存内容（x/100x 内存地址）</li>
-</ul>
-<h5 id="案例-crasher-smash-stack"><a href="#案例-crasher-smash-stack" class="headerlink" title="案例 crasher smash-stack"></a>案例 crasher smash-stack</h5><p>这里选择overwrite a stack-guard canary。破坏栈保护机制中保存在返回地址和局部变量之间的cookie信息，触发栈保护流程，抛出异常触发crash。参考：<a href="http://www.hackdig.com/03/hack-32670.htm" target="_blank" rel="noopener">http://www.hackdig.com/03/hack-32670.htm</a> 。crasher中的例子中，定义一个全局指针变量P，指向函数F1中定义局部变量数组，F1中调用非内联函数F2，在F2中通过P修改栈保护的cookie信息（此处需要关注栈的生长方向）,F2返回后会进行cookie校验，如果成功校验则跳到返回继续执行，否则触发栈保护流程。<img src="/2019/05/19/Android-stability-study/smash-stack.PNG" alt="smash-stack"></p>
-<h3 id="Kernel-Crash"><a href="#Kernel-Crash" class="headerlink" title="Kernel Crash"></a>Kernel Crash</h3><p>Android系统使用了Linux内核，所以这部分的分析和传统Linux kernel crash分析基本一样。一般的oops可能通过串口信息可以分析处理，处理不了的可能就需要通过内存取证机制在kernel崩溃时dump出整个ram空间的内容并通过特殊的工具来解析。</p>
-<h4 id="例子"><a href="#例子" class="headerlink" title="例子"></a>例子</h4><p>我们先制作一个内核空指针，然后通过串口信息看看oops的信息。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">define</span> CTP_SELF_CRASH_PROC_FILE <span class="meta-string">"ctp_crashtest"</span></span></span><br><span class="line"><span class="keyword">static</span> <span class="class"><span class="keyword">struct</span> <span class="title">proc_dir_entry</span> *<span class="title">g_ctp_crashtest_proc</span> = <span class="title">NULL</span>;</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> ssize_t <span class="title">ctp_crashtest_proc_write</span><span class="params">(struct file *file, <span class="keyword">const</span> <span class="keyword">char</span> __user *buf, <span class="keyword">size_t</span> size, <span class="keyword">loff_t</span> *ppos)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">int</span> * p = <span class="number">0x0</span>;</span><br><span class="line">	*p = <span class="number">100</span>;</span><br><span class="line">	<span class="keyword">return</span> size;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">static</span> ssize_t <span class="title">ctp_crashtest_proc_read</span><span class="params">(struct file *file, <span class="keyword">char</span> __user *buf, <span class="keyword">size_t</span> size, <span class="keyword">loff_t</span> *ppos)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="comment">// do nothing</span></span><br><span class="line">	<span class="keyword">return</span> size;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">file_operations</span> <span class="title">ctp_crashtest_proc_fops</span> = &#123;</span></span><br><span class="line">	.read		= ctp_crashtest_proc_read,</span><br><span class="line">	.write		= ctp_crashtest_proc_write,</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">g_ctp_crashtest_proc = proc_create_data(CTP_SELF_CRASH_PROC_FILE, <span class="number">0660</span>, <span class="literal">NULL</span>, &amp;ctp_crashtest_proc_fops, <span class="literal">NULL</span>);</span><br><span class="line"><span class="keyword">if</span> (IS_ERR_OR_NULL(g_ctp_crashtest_proc))</span><br><span class="line">&#123;</span><br><span class="line">	printk(<span class="string">"create_proc_entry g_ctp_crashtest_proc failed\n"</span>);</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">else</span></span><br><span class="line">&#123;</span><br><span class="line">	printk(<span class="string">"create_proc_entry g_ctp_crashtest_procsuccess\n"</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>执行命令触发异常：echo 1 &gt; /proc/ ctp_crashtest，查看分析报告：</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">982.155515:   &lt;6&gt; le to handle kernel NULL pointer dereference at virtual address 00000000（空指针）</span><br><span class="line">982.155533:   &lt;6&gt; pgd = e5238000</span><br><span class="line">982.155543:   &lt;2&gt; [00000000] *pgd=00000000</span><br><span class="line">982.155559:   &lt;6&gt; Internal error: Oops: 805 [#1] PREEMPT SMP ARM</span><br><span class="line">982.155569:   &lt;2&gt; les linked in: core_ctl(PO) wlan(O) qdrbg_module(O) qcrypto_module(O)</span><br><span class="line">982.155600:   &lt;6&gt;  1 PID: 6605 Comm: sh Tainted: P        W  O 3.10.84-gf196584-00169-g032b8d9-dirty #2</span><br><span class="line">982.155614:   &lt;6&gt; task: e606cb00 ti: e51b8000 task.ti: e51b8000</span><br><span class="line">982.155641:   &lt;2&gt; s at ctp_crashtest_proc_write+0xc/0x14 回溯</span><br><span class="line">982.155655:   &lt;2&gt; s at proc_reg_write+0x6c/0x80</span><br><span class="line">982.155669:   &lt;2&gt;  [&lt;c05fab78&gt;]    lr : [&lt;c02464c0&gt;]    psr: a0010013 sp : e51b9f40  ip : c05fab6c  fp : b7bfa72e</span><br><span class="line">982.155681:   &lt;2&gt;  00000000  r9 : 00000002  r8 : 00000000</span><br><span class="line">982.155691:   &lt;2&gt;  00000001  r6 : 00000000  r5 : ec45c980  r4 : 00000000</span><br><span class="line">982.155701:   &lt;2&gt;  00000000  r2 : 00000002  r1 : 00000064  r0 : 00000002寄存器信息</span><br><span class="line">982.155713:   &lt;2&gt; s: NzCv  IRQs on  FIQs on  Mode SVC_32  ISA ARM  Segment user</span><br><span class="line">982.155724:   &lt;2&gt; rol: 10c0383d  Table: 4523806a  DAC: 00000015</span><br><span class="line">982.155734:   &lt;6&gt; Process sh (pid: 6605, stack limit = 0xe51b8238)</span><br><span class="line">982.155745:   &lt;6&gt; k: (0xe51b9f40 to 0xe51ba000)内存</span><br><span class="line">982.155764:   &lt;6&gt; 9f40: e63a3540 b7bfadbc e51b9f80 00000002 b7bfadbc c02000b4 e63a3540 b7bfadbc</span><br><span class="line">982.155780:   &lt;6&gt; 9f60: 00000002 00000000 00000000 e63a3540 00000000 b7bfadbc 00000002 c0200570</span><br><span class="line">982.155796:   &lt;6&gt; 9f80: 00000000 00000000 00000002 b6d23f1c 00000001 00000002 00000004 c0106144</span><br><span class="line">982.155813:   &lt;6&gt; 9fa0: e51b8000 c0105fc0 b6d23f1c 00000001 00000001 b7bfadbc 00000002 b6dcc528</span><br><span class="line">982.155830:   &lt;6&gt; 9fc0: b6d23f1c 00000001 00000002 00000004 b6d2405c b6deae40 00000003 b7bfa72e</span><br><span class="line">982.155847:   &lt;6&gt; 9fe0: b7bfadbc becb0628 b6d1f705 b6dcc534 40010010 00000001 00000000 00000000</span><br><span class="line">982.155877:   &lt;2&gt; [&lt;c05fab78&gt;] (ctp_crashtest_proc_write+0xc/0x14) from [&lt;c02464c0&gt;] (proc_reg_write+0x6c/0x80)</span><br><span class="line">982.155902:   &lt;2&gt; [&lt;c02464c0&gt;] (proc_reg_write+0x6c/0x80) from [&lt;c02000b4&gt;] (vfs_write+0xd0/0x180)</span><br><span class="line">982.155924:   &lt;2&gt; 2000b4&gt;] (vfs_write+0xd0/0x180) from [&lt;c0200570&gt;] (SyS_write+0x38/0x68)</span><br><span class="line">982.155947:   &lt;2&gt; [&lt;c0200570&gt;] (SyS_write+0x38/0x68) from [&lt;c0105fc0&gt;] (ret_fast_syscall+0x0/0x38)</span><br><span class="line">982.155966:   &lt;6&gt; Code: c1576314 e3a03000 e3a01064 e1a00002 (e5831000) </span><br><span class="line">982.155989:   &lt;6&gt;  end trace 215b72e019f398f5 ]---</span><br></pre></td></tr></table></figure>
-
-<p>然后通过addr2line等工具定位问题代码：</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">./prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-addr2line -e out/target/product/gohan/obj/KERNEL_OBJ/vmlinux c05fab78</span><br><span class="line">/home/huangzaiyang/WorkSpace/L9360/kernel/drivers/input/touchscreen/xxx_ctp_selftest.c:86</span><br><span class="line"></span><br><span class="line">./prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-objdump -D -S out/target/product/gohan/obj/KERNEL_OBJ/vmlinux &gt; vmlinux.txt反汇编比较久</span><br></pre></td></tr></table></figure>
-
-<h4 id="ramdump"><a href="#ramdump" class="headerlink" title="ramdump"></a>ramdump</h4><p>内核crash的原因是很多样且复杂的，大多数不是通过简单的回溯定位就能分析其根本原因。需要借助以下机制和工具来进行分析，内存取证对复杂的crash问题分析有很大的帮助。内存取证的方法不同的芯片厂商使用的方法不同，这里主要用到高通平台的ramdump。通过高通的定制，开启了相关机制后，在内核crash的时候系统会进入ramdump mode，然后使用其工具将整个内存的信息保存出来。这里不作详细的介绍。</p>
-<h4 id="crash-utiity"><a href="#crash-utiity" class="headerlink" title="crash-utiity"></a>crash-utiity</h4><p>当我们拿到ram dump后需要借助一些工具来进行解析，并对当时的现场进行恢复。这类工具有很多，但是大多用不起来。比如鼎鼎大名的Trace32，支持离线和在线调试分析，但是要收费。还有其它的比如：KGDB，linux自带在线调试（目前尝试不成功）；LIME：尝试不成功。而红帽子公司的crash-utility离线调试工具使用起来还是比较方便且很强大。</p>
-<ul>
-<li><p>安装crash工具<br>下载：<a href="http://people.redhat.com/anderson/" target="_blank" rel="noopener">http://people.redhat.com/anderson/</a><br>解压：tar xvzmf crash-7.x.x.tar.gz<br>编译：cd crash-7.x.x &amp; make target=ARM64 &amp; sudo make install<br>安装：sudo make install<br>测试：执行crash</p>
-</li>
-<li><p>使用crash工具<br>准备：获取System.map和vmlinux，在out/target/product/${platform}/obj/KERNEL_OBJ目录下，拷贝一份放到ram dump 目录下。<br>解析：crash System.map vmlinux DDRCS0.BIN@0x40000000,DDRCS1.BIN@0x80000000<br>注意：多个DDRCSx.BIN@base_addr需要“，”隔开，base_addr是对应bank的基地址，可以在ram dump文件夹中的dump_info.txt找到。</p>
-</li>
-<li><p>crash工具命令，以下只是一些基本常用的命令，可以通过help查看学习更多命令。<br>解析成功后会进入crash命令行，有各种命令可以使用：<br>sys      //显示系统信息<br>set      //显示当前发生重大故障时运行进程的上下文。<br>log      //显示log，与dmesg命令相同<br>sf        // set scroll off的别名，设置后log命令直接到log最后，set scroll on则相反<br>ps       //查看进程，ps | grep “UN”“RU”“IN”可以查到处于不同状态的进程;ps | grep “进程名”会列出对应进程的所有线程<br>bt       //打印回溯 可以使用ps查到pid 或者task的地址进行打印<br>kmem -i   //查看内存使用情况<br>struct task_struct ffff88011fe8e200  // ffff88011fe8e200是某个进程或线程的task地址，查看控制块详细信息<br>p 全局变量名   //查看全局变量<br>sym                  //查看变量地址<br>mod –s modulename module_symbol_path      //加载模块符号表，ko模块<br>gdb set print element 0        //变量打印不全</p>
-</li>
-<li><p>新版本的linux 内核默认开启了地址随机化。使用crash-utility会失败。这时可以直接把内核地址随机华的宏关掉。或者比如高通平台的地址随即化的偏移值存放在OCIMEM.BIN中，可以通过命令获取出来，并添加到crash命令的–kaslr参数后面。</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">hexdump  -e '16/4 "%08x " "\n"' -s 0x03f6d4 -n 8 OCIMEM.BIN //0x03f6d4视情况而定</span><br><span class="line">crash64 vmlinux DDRCS0_0.BIN@0xxxx,DDRCS1_0.BIN@0xxxx --kaslr kaslr-offset</span><br></pre></td></tr></table></figure>
-
-</li>
-</ul>
-<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>不管是native还是kernel的稳定性问题都是很大的课题，本文知识整理了相关的一些基本知识和调试工具的使用，后续还会整理一些过去处理的案例；同时新遇到的一些典型问题也会整理，加强自己对代码在运行时的认识。总之，长路漫漫！</p>
-<h3 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h3><p><a href="http://blog.csdn.net/aa787282301/article/details/78995349" target="_blank" rel="noopener">http://blog.csdn.net/aa787282301/article/details/78995349</a><br><a href="https://www.redhat.com/archives/crash-utility/2008-March/msg00024.html" target="_blank" rel="noopener">https://www.redhat.com/archives/crash-utility/2008-March/msg00024.html</a><br><a href="http://www.jianshu.com/p/a1a560a58de0" target="_blank" rel="noopener">http://www.jianshu.com/p/a1a560a58de0</a><br><a href="http://blog.csdn.net/u011279649/article/details/9294041" target="_blank" rel="noopener">http://blog.csdn.net/u011279649/article/details/9294041</a><br><a href="http://bbs.chinaunix.net/thread-4146313-1-1.html" target="_blank" rel="noopener">http://bbs.chinaunix.net/thread-4146313-1-1.html</a><br><a href="http://blog.csdn.net/yangkuanqaz85988/article/details/52403726" target="_blank" rel="noopener">http://blog.csdn.net/yangkuanqaz85988/article/details/52403726</a></p>
+<p>重新复现问题，问题复现后，连接电脑，打开QFIL Configuration，长按power键，进dump后抓出ram dump！</p>
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="问题定位"><a href="#问题定位" class="headerlink" title="问题定位"></a>问题定位</h4><p>拿到ramdump后，使用crash-utility工具解析出来，开始分析。首先，查看8个cpu的就绪队列上只有idle进程。系统空闲，这也符合关机过程的负载情况，但是其他所有进程却都没有拿到CPU资源，比如关机流程这个时候正常的话应该持有cpu资源吧！</p>
+<p>查看是不是有可以的D状态进程！比较可疑的几个我们用红色字母标记出来！！特别是这个init进程是首要的分析对象，因为android世界里所有的关机、重启流程都统一由init进程发起底层流程！所以内核的关机流程应该是运行在init进程空间里面！</p>
+<p><img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/disk-sleep-process.PNG" alt="D状态进程"></p>
+<p>先看看init进程的现场，和回溯上的关键函数device_shutdown的反汇编代码。在我们case中是跑的路径1。也就是说当前shutdown的设备存在父设备，这里要对父设备进行上锁。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/init-process.PNG" alt="init进程"></p>
+<p>看看对应的C代码，这里我们要找出parent的地址，进而找出这个mutex锁！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-mutex.PNG" alt="目标锁"></p>
+<p>检查struct device结构体，mutex的偏移0x60，和我们当前case的执行路径代码流程对应一致。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-device.PNG" alt="device和mutex的关系"></p>
+<h4 id="锁的推导"><a href="#锁的推导" class="headerlink" title="锁的推导"></a>锁的推导</h4><p>通常情况下对于变量的推导，可以从当前函数往前或者往后去推导。</p>
+<p>往前推导：从device_shutdown函数的C代码可以看到dev和parent是局部变量，我们断定可以下这个函数的栈帧中找到这两个变量。但是这个案例中，看看当前init进程堆栈中device_shutdown函数的详细堆栈情况。函数汇编代码我看起来有点吃力，不知道是不是代码被优化过了，device_shutdown函数的栈帧似乎并没有用来存储本地局部变量！能力有限，放弃往前推导。</p>
+<p>往后推导：mutex_lock函数接收一个参数，就是metux。我们看看往后能不能拿到这个锁的地址，进而找到parent这个device！mutex_lock函数中接收的x0就是这个mutex，红色1中x0会赋值给x19，然后红色2调用__ mutex_lock_slowpath函数，由于 __ mutex_lock_slowpath函数需要用到想x19，所以x19会先被保存在__mutex_lock_slowpath的栈帧当中，如红色3所示！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/flow1.PNG" alt="上锁流程1"></p>
+<p>看看__mutex_lock_slowpath函数栈帧偏移16的红框位置中应该就是被保存的x19，也就是mutex！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/mutex-found.PNG" alt="mutex地址"></p>
+<p>通过mutex在struct device结构体中的偏移，我们就可以知道这个parent的地址为多少。parent的地址为ffffffcbf3a3b070 – 0x60 = ffffffcbf3a3b010，看看这个device的关键信息。对应的内核对象名字可以猜测是哪个模块的设备，mutex可以看到当前锁的owner（就是锁的持有者），还有可以看出哪些进程正在等待这个锁！下面我们一一分析！</p>
+<h4 id="死锁原因"><a href="#死锁原因" class="headerlink" title="死锁原因"></a>死锁原因</h4><p>前面我们已经找到了目标设备和目标锁的地址。看看我们关心的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/key-info.PNG" alt="关键信息"></p>
+<p>在内核代码搜索kobj名字，可以看到当前是在shutdown的模块是audio codecs：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-module.PNG" alt="问题模块"></p>
+<p>通过锁的owner可以查看，当前这个锁的持有者是kworker/7这个进程：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-owner.PNG" alt="锁的持有者"></p>
+<p>通过wait_list我们看看有哪些进程在等待这个锁。再次确认kworker/7是持有者，init是等待者！也就是我们的问题所在。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-waiter.PNG" alt></p>
+<p>现在需要进一步找出kworker/7为什么不释放这个锁，找到原因，问题也就可以解决了。同样的方法我们直接找出这个进程所等待的另一个锁ffffffcbf3a3c178。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-mutex.PNG" alt="问题锁"></p>
+<p>看看谁在持有了这个锁，发现是kworker/7自己持有了！！也就是说可能出现重复加锁的状态了，也就是嵌套申请同一个的情况锁！往前看kworker/7的回溯， 应该是在__msm_sdw_page_write函数中需要上这个锁，把对应的汇编和C代码拉出来！就是红圈标志的这个锁！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-lock-fail.PNG" alt="上锁等待"></p>
+<p>通过回溯中一级一级函数往回找，看看哪级函数有申请这个锁的，主要关注msm_sdw这部分的函数。尝试通过代码和回溯的栈内容来找到这个锁的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-trace.PNG" alt="问题回溯"></p>
+<p>找了半天没有找到相关函数有申请这个锁的！怀疑是这个过程中有某些函数调用没有正确释放锁就返回导致的。结合kmsg，直接在相关模块搜索这个锁名字，看看所有有使用这个锁的函数！运气不错~<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-code.PNG" alt="问题代码"></p>
+<h2 id="思路总结"><a href="#思路总结" class="headerlink" title="思路总结"></a>思路总结</h2><p>整个过程基本上说明的内核死锁的基本分析方法。得益于crash-utility的强大的命令。像struct、list等在此问题的分析上起到很多的作用。当然也需要具备一些内核的基础知识、arm汇编等。需要保持学习！</p>
 
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://yoursite.com/2019/05/19/Android-stability-study/" data-id="cjx4rca4z0015t0iiztqvss39" class="article-share-link">Share</a>
+      <a data-url="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" data-id="cjx4rca2p0003t0iitrdeyw1u" class="article-share-link">Share</a>
       
       
-  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/学习/">学习</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/">Linux</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
 
     </footer>
   </div>
@@ -156,7 +125,7 @@
 
   <nav id="page-nav">
     
-    <a class="extend prev" rel="prev" href="/page/6/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><a class="page-number" href="/page/6/">6</a><span class="page-number current">7</span><a class="page-number" href="/page/8/">8</a><a class="page-number" href="/page/9/">9</a><span class="space">&hellip;</span><a class="page-number" href="/page/21/">21</a><a class="extend next" rel="next" href="/page/8/">Next &raquo;</a>
+    <a class="extend prev" rel="prev" href="/page/6/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><a class="page-number" href="/page/6/">6</a><span class="page-number current">7</span><a class="page-number" href="/page/8/">8</a><a class="page-number" href="/page/9/">9</a><span class="space">&hellip;</span><a class="page-number" href="/page/22/">22</a><a class="extend next" rel="next" href="/page/8/">Next &raquo;</a>
   </nav>
 
 </section>
@@ -170,7 +139,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">10</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">14</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">9</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">11</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">15</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
     </div>
   </div>
 
@@ -189,7 +158,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Archives</h3>
     <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
     </div>
   </div>
 
@@ -200,6 +169,10 @@
     <h3 class="widget-title">Recent Posts</h3>
     <div class="widget">
       <ul>
+        
+          <li>
+            <a href="/2019/06/25/Android-Init-FBE/">Android启动流程-FBE部分</a>
+          </li>
         
           <li>
             <a href="/2019/06/15/Linux-system-ipc/">Linux进程间通信机制</a>
@@ -215,10 +188,6 @@
         
           <li>
             <a href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
-          </li>
-        
-          <li>
-            <a href="/2019/05/22/Qcom-watchdog/">高通watchdog驱动分析</a>
           </li>
         
       </ul>
