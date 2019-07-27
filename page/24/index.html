@@ -58,10 +58,10 @@
       <div class="outer">
         <section id="main">
   
-    <article id="post-first-page" class="article article-type-post" itemscope itemprop="blogPost">
+    <article id="post-Android-debug-tools" class="article article-type-post" itemscope itemprop="blogPost">
   <div class="article-meta">
-    <a href="/2019/02/27/first-page/" class="article-date">
-  <time datetime="2019-02-27T15:00:00.000Z" itemprop="datePublished">2019-02-27</time>
+    <a href="/2019/03/01/Android-debug-tools/" class="article-date">
+  <time datetime="2019-03-01T15:00:00.000Z" itemprop="datePublished">2019-03-01</time>
 </a>
     
   </div>
@@ -72,7 +72,7 @@
         
   
     <h1 itemprop="name">
-      <a class="article-title" href="/2019/02/27/first-page/">JoyYoung&#39;s blog journey</a>
+      <a class="article-title" href="/2019/03/01/Android-debug-tools/">Android调试工具整理</a>
     </h1>
   
 
@@ -80,14 +80,44 @@
     
     <div class="article-entry" itemprop="articleBody">
       
-        <p>Welcome to JoyYoung’s blog.I will record some of the summaries of my studies and work here.If there is something wrong in the blog post, welcome everyone to correct me;if the article has any help for you, please share them with your friends! My email address is <a href="mailto:hzy0719@163.com" target="_blank" rel="noopener">hzy0719@163.com</a>!</p>
+        <p>整理一些Android系统上问题分析过程中需要的命令、工具或者方法。会持续更新。</p>
+<h4 id="logcat"><a href="#logcat" class="headerlink" title="logcat"></a>logcat</h4><p>logcat是抓取android log的工具，在android系统上分析调试问题最常用的工具，详细信息可用logcat –h查看。</p>
+<h4 id="bugreport"><a href="#bugreport" class="headerlink" title="bugreport"></a>bugreport</h4><p>bugreport是搜集各类系统信息的的工具，参考<a href="https://blog.csdn.net/ccjhdopc/article/details/52651215。" target="_blank" rel="noopener">https://blog.csdn.net/ccjhdopc/article/details/52651215。</a></p>
+<h4 id="dumpsys"><a href="#dumpsys" class="headerlink" title="dumpsys"></a>dumpsys</h4><p>这个命令可以打印Android各个系统服务的状态信息，dumpsys –h查看详细用法。</p>
+<h4 id="cmd"><a href="#cmd" class="headerlink" title="cmd"></a>cmd</h4><p>和dumpsys是相反的，cmd可以控制一些服务的状态和参数等。cmd -l列出可用的服务；cmd “服务名”可以查看某个服务提供的控制方法。</p>
+<h4 id="top"><a href="#top" class="headerlink" title="top"></a>top</h4><p>top命令其实是Linux的就有的，通常会用来实时查看进程的cpu、内存等使用情况。top –help查看帮助。</p>
+<h4 id="SQLiteDebug"><a href="#SQLiteDebug" class="headerlink" title="SQLiteDebug"></a>SQLiteDebug</h4><p>这是数据库的debug类，我们可以设置logcat对应的log级别来打开数据库相关的调试信息。重启android层生效；不过可以配置到系统属性默认文件里面。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Controls the printing of informational SQL log messages.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Enable using "adb shell setprop log.tag.SQLiteLog VERBOSE".</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">boolean</span> DEBUG_SQL_LOG =</span><br><span class="line">        Log.isLoggable(<span class="string">"SQLiteLog"</span>, Log.VERBOSE);</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Controls the printing of SQL statements as they are executed.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Enable using "adb shell setprop log.tag.SQLiteStatements VERBOSE".</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">boolean</span> DEBUG_SQL_STATEMENTS =</span><br><span class="line">        Log.isLoggable(<span class="string">"SQLiteStatements"</span>, Log.VERBOSE);</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Controls the printing of wall-clock time taken to execute SQL statements</span></span><br><span class="line"><span class="comment"> * as they are executed.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Enable using "adb shell setprop log.tag.SQLiteTime VERBOSE".</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">boolean</span> DEBUG_SQL_TIME =</span><br><span class="line">        Log.isLoggable(<span class="string">"SQLiteTime"</span>, Log.VERBOSE);</span><br></pre></td></tr></table></figure>
 
+<h4 id="strace"><a href="#strace" class="headerlink" title="strace"></a>strace</h4><p>源码在external/strace下，使用该工具需要root权限；可以跟踪某个进程的系统调用情况：</p>
+<p>跟踪进程：strace -p pid</p>
+<p>跟踪android apk：strace -f -p zygote_pid</p>
+<p>详细使用strace –h查看。</p>
+<h4 id="dumpstate"><a href="#dumpstate" class="headerlink" title="dumpstate"></a>dumpstate</h4><p>dumpstate也是个很集合很大的信息收集，dumpstate -h，待挖掘！</p>
+<h4 id="kill"><a href="#kill" class="headerlink" title="kill"></a>kill</h4><p>通常用来抓取进程的java回溯信息，kill -3 <pid>   保存在data/anr/traces.txt中。</pid></p>
+<h4 id="Debuggerd"><a href="#Debuggerd" class="headerlink" title="Debuggerd"></a>Debuggerd</h4><p>通常用来抓取native的回溯信息，debuggerd -b 4016 &gt; tombstone0，主要是native部分</p>
+<h4 id="系统调用"><a href="#系统调用" class="headerlink" title="系统调用"></a>系统调用</h4><p>有时候可能需要在系统调用的内核代码中加一些log或者做一些动作配合问题分析，如：</p>
+<p>内核中signal.c的__send_signal函数中可以添加以下log跟踪信号发送：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*add to debug signal events start*/</span></span><br><span class="line"></span><br><span class="line">        pr_info(<span class="string">"__send_signal %s to %s , sig:%d @@@\n"</span>,current-&gt;comm,t-&gt;comm,sig);</span><br><span class="line">         <span class="keyword">if</span>(sig==<span class="number">9</span> &amp;&amp; !<span class="built_in">strcmp</span>(t-&gt;comm,<span class="string">"system_server"</span>)) &#123;</span><br><span class="line">                   pr_info(<span class="string">"dump stack: %s\n"</span>,t-&gt;comm);</span><br><span class="line">                   dump_stack();</span><br><span class="line">         &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/*add to debug signal events end  */</span></span><br></pre></td></tr></table></figure>
+
+<p>有时候某个进程莫名其妙调用了exit退出，没办法找到它在哪里退出的时候，可以在exit系统调用的内核代码里添加以下代码，使其调用exit时直接panic，然后抓取dump分析其用户空间。Panic的条件进程名和退出码可以根据实际情况修改。kernel/kernel/exit.c -&gt; do_exit：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">SYSCALL_DEFINE1(<span class="built_in">exit</span>, <span class="keyword">int</span>, error_code)</span><br><span class="line">&#123;</span><br><span class="line">	pr_info(<span class="string">"progess : %s exit %d \n"</span>,current-&gt;comm,error_code);</span><br><span class="line">        <span class="keyword">if</span>(error_code==<span class="number">0</span> &amp;&amp; !<span class="built_in">strcmp</span>(current-&gt;comm,<span class="string">"ftmdaemon"</span>)) &#123;</span><br><span class="line">		pr_info(<span class="string">"dump stack: %s\n"</span>,current-&gt;comm);</span><br><span class="line">		panic(<span class="string">"trigger crash: %s\n"</span>,current-&gt;comm);</span><br><span class="line">	&#125;</span><br><span class="line">	do_exit((error_code&amp;<span class="number">0xff</span>)&lt;&lt;<span class="number">8</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="log2klog"><a href="#log2klog" class="headerlink" title="log2klog"></a>log2klog</h4><p>无adb口出来，但问题要结合user space log分析，使用过一次。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span> 关闭selinux</span><br><span class="line"><span class="meta">#</span> 在init.qcom.rc下增加如下属性：</span><br><span class="line">service log2klog /system/bin/logcat -f /dev/kmsg</span><br><span class="line">    class core</span><br><span class="line">    user root</span><br><span class="line">    seclabel u:r:rfs_access:s0</span><br><span class="line">    oneshot</span><br></pre></td></tr></table></figure>
+
+<h4 id="libc"><a href="#libc" class="headerlink" title="libc"></a>libc</h4><p>可以在libc相关的函数添加调试信息。比如，有时候上层主动重启，但是log无法定位：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">diff --git a/libc/bionic/system_properties.cpp b/libc/bionic/system_properties.cpp</span><br><span class="line">index <span class="number">68f</span>4501..f2ecdc2 <span class="number">100644</span></span><br><span class="line">--- a/libc/bionic/system_properties.cpp</span><br><span class="line">+++ b/libc/bionic/system_properties.cpp</span><br><span class="line">@@ <span class="number">-1257</span>,<span class="number">6</span> +<span class="number">1257</span>,<span class="number">11</span> @@ <span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">detect_protocol_version</span><span class="params">()</span> </span>&#123;</span><br><span class="line"> <span class="keyword">int</span> __system_property_set(<span class="keyword">const</span> <span class="keyword">char</span>* key, <span class="keyword">const</span> <span class="keyword">char</span>* value) &#123;</span><br><span class="line">   <span class="keyword">if</span> (key == <span class="literal">nullptr</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">   <span class="keyword">if</span> (value == <span class="literal">nullptr</span>) value = <span class="string">""</span>;</span><br><span class="line">+</span><br><span class="line">+  <span class="keyword">if</span> (<span class="built_in">strcmp</span>(key, <span class="string">"sys.powerctl"</span>) == <span class="number">0</span>) &#123;</span><br><span class="line">+    <span class="built_in">abort</span>();</span><br><span class="line">+  &#125;</span><br><span class="line">+</span><br><span class="line">   <span class="keyword">if</span> (<span class="built_in">strlen</span>(value) &gt;= PROP_VALUE_MAX) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line"> </span><br><span class="line">   <span class="keyword">if</span> (g_propservice_protocol_version == <span class="number">0</span>) &#123;</span><br></pre></td></tr></table></figure>
+
+<h4 id="待续…"><a href="#待续…" class="headerlink" title="待续…"></a>待续…</h4>
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://yoursite.com/2019/02/27/first-page/" data-id="cjy7ayu2o000feoiippyol1sw" class="article-share-link">Share</a>
+      <a data-url="http://yoursite.com/2019/03/01/Android-debug-tools/" data-id="cjy7ayu210006eoii7wfgt0iv" class="article-share-link">Share</a>
       
       
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/学习/">学习</a></li></ul>
+
     </footer>
   </div>
   
@@ -99,7 +129,7 @@
 
   <nav id="page-nav">
     
-    <a class="extend prev" rel="prev" href="/page/23/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/22/">22</a><a class="page-number" href="/page/23/">23</a><span class="page-number current">24</span>
+    <a class="extend prev" rel="prev" href="/page/23/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/22/">22</a><a class="page-number" href="/page/23/">23</a><span class="page-number current">24</span><a class="page-number" href="/page/25/">25</a><a class="extend next" rel="next" href="/page/25/">Next &raquo;</a>
   </nav>
 
 </section>
@@ -113,7 +143,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">10</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">16</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">6</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">11</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">16</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">7</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
     </div>
   </div>
 
@@ -132,7 +162,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Archives</h3>
     <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
     </div>
   </div>
 
@@ -143,6 +173,10 @@
     <h3 class="widget-title">Recent Posts</h3>
     <div class="widget">
       <ul>
+        
+          <li>
+            <a href="/2019/07/10/a-intentresolver-cts-issue/">关于IntentResolver的一个cts问题</a>
+          </li>
         
           <li>
             <a href="/2019/07/05/native-acess-javaservice-with-binder/">Android平台上native代码访问PackageManagerService</a>
@@ -158,10 +192,6 @@
         
           <li>
             <a href="/2019/06/15/Linux-system-ipc/">Linux进程间通信机制</a>
-          </li>
-        
-          <li>
-            <a href="/2019/06/01/Android-hidl-sample-impletment/">Android9.0 HIDL 学习</a>
           </li>
         
       </ul>
