@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>Android开机时间分析 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="android开机时间耗时分析">
+<meta name="keywords" content="Android,学习">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android开机时间分析">
+<meta property="og:url" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="android开机时间耗时分析">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/bootchat-1.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/bootchat-2.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/perfboot-env.PNG">
+<meta property="og:image" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/%E6%81%A2%E5%A4%8D%E5%87%BA%E5%8E%82%E8%AE%BE%E7%BD%AE%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%E5%AF%B9%E6%AF%94.PNG">
+<meta property="og:updated_time" content="2019-08-07T11:58:52.123Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Android开机时间分析">
+<meta name="twitter:description" content="android开机时间耗时分析">
+<meta name="twitter:image" content="http://yoursite.com/2019/07/15/Android-booting-time-spent/bootchat-1.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Android-booting-time-spent" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/07/15/Android-booting-time-spent/" class="article-date">
+  <time datetime="2019-07-15T15:00:00.000Z" itemprop="datePublished">2019-07-15</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      Android开机时间分析
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="阶段划分"><a href="#阶段划分" class="headerlink" title="阶段划分"></a>阶段划分</h3><p>此部分将学习理解android系统开机流程。以高通平台为例，大致可以分为以下几个阶段：</p>
+<p>1、芯片启动引导：</p>
+<p>PBL：即Primary Boot Loader，不开源。位于芯片内boot rom中，是芯片上电后执行的真正第一行代码。非正常启动时（短接板子上的force_usb_boot引脚到1.8v可以强制进入紧急下载模式）；正常启动流程中会加载SBL1然后跳转到SBL1执行。</p>
+<p>SBL1 ：即Second BootLoader stage 1，位于eMMC中，由PBL加载。主要工作是初始化buses、DDR、clocks、加载QSEE/DEVCFG/Dbg policy/APPSBL/RPM/。然后跳转到QSEE执行。</p>
+<p>QSEE：arm架构安全执行环境的高通实现，也就是所谓的安全操作系统；不是我们的关注点。主要工作时通知RPM去执行RPM_FW相关代码；然后跳转到APPSBL中执行。</p>
+<p>APPSBL：即为BootLoader，目前使用LK（little kernel）。主要工作是硬件环境，从启动流程来讲分为recovery、bootloader和正常启动；对于正常启动主要就是加载内核并跳转到内核执行。</p>
+<p>2、Linux内核启动：</p>
+<p>这个阶段可以认为是start_kernel到启动init进程这个过程；主要就是初始化内核各类子系统和驱动模块，最后启动init进程。</p>
+<p>3、init进程初始化：</p>
+<p>第一阶段：运行在内核态中，具体任务可以根据is_first_stage为true部分的代码，会在最后调用execv启动用户态的init进程。</p>
+<p>第二阶段：运行在用户态中，具体的任务也非常多，主要初始化属性系统、到处dt和cmdline等属性、selinux、avb；加载rc脚本、触发开机流程启动各类服务进程。</p>
+<p>4、SystemServer进程初始化：</p>
+<p>init进程准备好一切后触发启动Zygote进程。根据的启动参数，Zygote服务会孵化出Android系统的第一个应用进程SystemServer;SystemServer进程完成初始化工作后，系统将进入到主界面！</p>
+<h3 id="运行时间"><a href="#运行时间" class="headerlink" title="运行时间"></a>运行时间</h3><p>此部分将学习如何统计和分析各启动阶段的耗时情况。</p>
+<h4 id="芯片启动引导"><a href="#芯片启动引导" class="headerlink" title="芯片启动引导"></a>芯片启动引导</h4><p>这部分不在我们重点学习的范围、主要是通过串口log辅助定位。</p>
+<h4 id="Linux内核启动"><a href="#Linux内核启动" class="headerlink" title="Linux内核启动"></a>Linux内核启动</h4><p>这部分同样不在我们重点学习的范围、主要是通过串口log辅助定位。这部分的开始标志可以从start_kernel函数开始到以下log作为结束标志。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">01-16 04:23:03.651     0    0 I init    : init first stage started!</span><br></pre></td></tr></table></figure>
+
+<p>通常驱动模块的初始化作为重点关注对象，可以把内核的initcall_debug设置为true来抓log分析！</p>
+<h4 id="init进程初始化"><a href="#init进程初始化" class="headerlink" title="init进程初始化"></a>init进程初始化</h4><p>我们大概已经了解了init进程初始化的工作流程，先关的细节不在这里讨论；这节主要学些如何通过log和工具来统计分析init进程在Android开机启动过程中的耗时情况。</p>
+<h5 id="log"><a href="#log" class="headerlink" title="log"></a>log</h5><p>init进程的log是输出到内核的，所以可以通过抓取内核log（串口、或者adb logcat -b kernel）来辅助分析。以下log来判断总时间：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span>init第一阶段开始</span><br><span class="line">01-16 04:23:03.651     0    0 I init    : init first stage started!</span><br><span class="line"><span class="meta">#</span>init第二阶段开始</span><br><span class="line">01-16 04:23:03.897     0     0 I init    : init second stage started!</span><br><span class="line"><span class="meta">#</span>init第二阶段结束，启动zygote</span><br><span class="line">01-16 04:23:13.072     0     0 I init    : starting service 'zygote'...</span><br></pre></td></tr></table></figure>
+
+<p>第一阶段的耗时通常都不会有大的变化，第二阶段的耗时主要有selinux打标签、加载解析rc脚本、服务启动和命令执行等。</p>
+<h5 id="bootchart"><a href="#bootchart" class="headerlink" title="bootchart"></a>bootchart</h5><p>Bootchart是一个用于linux启动过程性能分析的开源软件工具，在系统启动过程自动收集CPU占用率、进程等信息，并以图形方式显示分析结果。</p>
+<p>ubuntu电脑上需要先安装以下工具包：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get install bootchart  </span><br><span class="line">sudo apt-get install pybootchartgui</span><br></pre></td></tr></table></figure>
+
+<p>在Android P 上实验为例，userdebug版本输入以下命令开始抓取：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span>使能bootchart</span><br><span class="line">adb shell touch /data/bootchart/enabled</span><br><span class="line"><span class="meta">#</span>重启</span><br><span class="line">adb reboot</span><br></pre></td></tr></table></figure>
+
+<p>重启完成后查看是否生成相关log并进行打包：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span>查看内容</span><br><span class="line">TB-XXXXX:/data/bootchart # ls -l</span><br><span class="line">total 6536</span><br><span class="line">-rw-rw-rw- 1 root root       0 2019-01-05 04:30 enabled</span><br><span class="line">-rw-rw-rw- 1 root root    1815 1970-03-02 02:59 header</span><br><span class="line">-rw-rw-rw- 1 root root  343558 2019-01-05 04:31 proc_diskstats.log</span><br><span class="line">-rw-rw-rw- 1 root root 6217088 2019-01-05 04:31 proc_ps.log</span><br><span class="line">-rw-rw-rw- 1 root root  103540 2019-01-05 04:31 proc_stat.log</span><br><span class="line"><span class="meta">#</span>打包内容</span><br><span class="line">TB-XXXXX:/data/bootchart # tar -czf bootchart.tgz *</span><br></pre></td></tr></table></figure>
+
+<p>将打包好的bootchart.tgz文件pull出来，放到Ubuntu系统的pc机上执行以下命令：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">XXXX@XX-ubuntu-196:~/$ bootchart bootchart.tgz </span><br><span class="line">parsing 'bootchart.tgz'</span><br><span class="line">parsing 'enabled'</span><br><span class="line">parsing 'header'</span><br><span class="line">parsing 'proc_diskstats.log'</span><br><span class="line">parsing 'proc_ps.log'</span><br><span class="line">warning: no parent for pid '2' with ppid '0'</span><br><span class="line">parsing 'proc_stat.log'</span><br><span class="line">merged 0 logger processes</span><br><span class="line">pruned 209 process, 0 exploders, 9 threads, and 1 runs</span><br><span class="line">False</span><br><span class="line">bootchart written to 'bootchart.png'</span><br></pre></td></tr></table></figure>
+
+<p>生产bootchart图片如下，从改图中可以看到各个进程的启动时间和结束时间<img src="/2019/07/15/Android-booting-time-spent/bootchat-1.PNG" alt="bootchat"></p>
+<p>我们看看zygote进程启动和system_server进程的情况，先抓一下log：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">TB-XXXXX:/ # logcat -b all | grep boot_pro</span><br><span class="line">03-02 02:59:35.870   442   442 I boot_progress_start: 11451</span><br><span class="line">01-05 04:31:27.111   442   442 I boot_progress_preload_start: 13228</span><br><span class="line">01-05 04:31:29.076   442   442 I boot_progress_preload_end: 15194</span><br><span class="line">01-05 04:31:29.507  1195  1195 I boot_progress_system_run: 15625</span><br><span class="line">01-05 04:31:30.065  1195  1195 I boot_progress_pms_start: 16182</span><br><span class="line">01-05 04:31:30.576  1195  1195 I boot_progress_pms_system_scan_start: 16694</span><br><span class="line">01-05 04:31:32.899  1195  1195 I boot_progress_pms_data_scan_start: 19016</span><br><span class="line">01-05 04:31:32.907  1195  1195 I boot_progress_pms_scan_end: 19025</span><br><span class="line">01-05 04:31:33.150  1195  1195 I boot_progress_pms_ready: 19268</span><br><span class="line">01-05 04:31:35.307  1195  1195 I boot_progress_ams_ready: 21425</span><br><span class="line">01-05 04:31:37.432  1195  1222 I boot_progress_enable_screen: 23550</span><br></pre></td></tr></table></figure>
+
+<p>然后对比bootchart的图片输出<img src="/2019/07/15/Android-booting-time-spent/bootchat-2.PNG" alt="zygote"></p>
+<h4 id="SystemServer进程初始化"><a href="#SystemServer进程初始化" class="headerlink" title="SystemServer进程初始化"></a>SystemServer进程初始化</h4><p>这个阶段我们是计算从zygote启动到进入android主界面这段时间的总耗时，可以通过events log来确认这个过程中各个小阶段的耗时情况，然后再细化分析主要耗时阶段！</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">TB-XXXXX:/ # logcat -b all | grep boot_pro</span><br><span class="line">03-02 02:59:35.870   442   442 I boot_progress_start: 11451</span><br><span class="line">01-05 04:31:27.111   442   442 I boot_progress_preload_start: 13228</span><br><span class="line">01-05 04:31:29.076   442   442 I boot_progress_preload_end: 15194</span><br><span class="line">01-05 04:31:29.507  1195  1195 I boot_progress_system_run: 15625</span><br><span class="line">01-05 04:31:30.065  1195  1195 I boot_progress_pms_start: 16182</span><br><span class="line">01-05 04:31:30.576  1195  1195 I boot_progress_pms_system_scan_start: 16694</span><br><span class="line">01-05 04:31:32.899  1195  1195 I boot_progress_pms_data_scan_start: 19016</span><br><span class="line">01-05 04:31:32.907  1195  1195 I boot_progress_pms_scan_end: 19025</span><br><span class="line">01-05 04:31:33.150  1195  1195 I boot_progress_pms_ready: 19268</span><br><span class="line">01-05 04:31:35.307  1195  1195 I boot_progress_ams_ready: 21425</span><br><span class="line">01-05 04:31:37.432  1195  1222 I boot_progress_enable_screen: 23550</span><br></pre></td></tr></table></figure>
+
+<h5 id="bootperf"><a href="#bootperf" class="headerlink" title="bootperf"></a>bootperf</h5><p>1、配置windows环境</p>
+<p>将AOSP/development/python-packages目录和AOSP/system/core/init/perfboot.py拷贝到同一目录<img src="/2019/07/15/Android-booting-time-spent/perfboot-env.PNG" alt="bootperf"></p>
+<p>2、抓取开机数据</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">set PYTHONPATH=E:\MyDocuments\perfboot\python-packages</span><br><span class="line">python perfboot.py --iterations=2 --interval=30 -v --output=yamcha_boot.tsv</span><br></pre></td></tr></table></figure>
+
+<p>3、抓取的tsv拷贝到exel文件中，稍微处理下，形成图片；以下是一个升级项目的首次开机时间对比结果。<img src="/2019/07/15/Android-booting-time-spent/%E6%81%A2%E5%A4%8D%E5%87%BA%E5%8E%82%E8%AE%BE%E7%BD%AE%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%E5%AF%B9%E6%AF%94.PNG" alt="对比"></p>
+<p>可以很直观的看出主要差异点是在boot_progress_start 到 boot_progress_preload_start之间</p>
+<h5 id="systrace"><a href="#systrace" class="headerlink" title="systrace"></a>systrace</h5><p>待续……</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/07/15/Android-booting-time-spent/" data-id="cjz1792yl000000ii6ni78ce9" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/学习/">学习</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2019/07/20/Android-gdb-extract-logs/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Android9.0 logd进程空间提取日志信息
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2019/07/10/a-intentresolver-cts-issue/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">关于IntentResolver的一个cts问题</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">8</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 12.5px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/07/20/Android-gdb-extract-logs/">Android9.0 logd进程空间提取日志信息</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/15/Android-booting-time-spent/">Android开机时间分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/10/a-intentresolver-cts-issue/">关于IntentResolver的一个cts问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/05/native-acess-javaservice-with-binder/">Android平台上native代码访问PackageManagerService</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/01/gdb_coredump_using/">Android平台上使用coredump+gdb</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>

@@ -58,10 +58,10 @@
       <div class="outer">
         <section id="main">
   
-    <article id="post-Linux-kernel-deadlock-in-shutdown-flow" class="article article-type-post" itemscope itemprop="blogPost">
+    <article id="post-Linux-global-data-overflow" class="article article-type-post" itemscope itemprop="blogPost">
   <div class="article-meta">
-    <a href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" class="article-date">
-  <time datetime="2019-05-20T15:47:44.000Z" itemprop="datePublished">2019-05-20</time>
+    <a href="/2019/05/25/Linux-global-data-overflow/" class="article-date">
+  <time datetime="2019-05-25T15:47:44.000Z" itemprop="datePublished">2019-05-25</time>
 </a>
     
   </div>
@@ -72,7 +72,7 @@
         
   
     <h1 itemprop="name">
-      <a class="article-title" href="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/">关机过程中死锁问题</a>
+      <a class="article-title" href="/2019/05/25/Linux-global-data-overflow/">全局数据踩踏问题</a>
     </h1>
   
 
@@ -80,36 +80,29 @@
     
     <div class="article-entry" itemprop="articleBody">
       
-        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>手机通过OTG连接鼠标、键盘灯设备，概率出现关不了机。</p>
-<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a><strong>初步排查</strong></h2><p>手机黑屏、连接电脑没有adb口、按power2~4秒没有开机说明手机没有进入关机状态。Tcard log未能找到有效信息，只能确定上层的关机流程已经跑完了。怀疑内核卡死在关机流程！需要ramdump辅助分析，而此时系统并没有crash,adb也不能用,需要硬件级别触发ramdump。把电源键长按功能定制为进入ramdump。将dtsi以下代码（长安重启）删除！</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">&amp;spmi_bus &#123;</span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment">  qcom,pm660@0 &#123;</span></span><br><span class="line"><span class="comment">    compatible = "qcom,spmi-pmic";</span></span><br><span class="line"><span class="comment">    qcom,power-on@800 &#123;</span></span><br><span class="line"><span class="comment">      compatible = "qcom,qpnp-power-on";  </span></span><br><span class="line"><span class="comment">      qcom,pon_1 &#123;</span></span><br><span class="line"><span class="comment">        qcom,pon-type = &lt;0&gt;;</span></span><br><span class="line"><span class="comment">        qcom,pull-up = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        linux,code = &lt;116&gt;;</span></span><br><span class="line"><span class="comment">        qcom,support-reset = &lt;1&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s1-timer = &lt;6720&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-timer = &lt;2000&gt;;</span></span><br><span class="line"><span class="comment">        qcom,s2-type = &lt;7&gt;;</span></span><br><span class="line"><span class="comment">      &#125;;</span></span><br><span class="line"><span class="comment">    &#125;;</span></span><br><span class="line"><span class="comment">  &#125;;</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
-
-<p>重新复现问题，问题复现后，连接电脑，打开QFIL Configuration，长按power键，进dump后抓出ram dump！</p>
-<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="问题定位"><a href="#问题定位" class="headerlink" title="问题定位"></a>问题定位</h4><p>拿到ramdump后，使用crash-utility工具解析出来，开始分析。首先，查看8个cpu的就绪队列上只有idle进程。系统空闲，这也符合关机过程的负载情况，但是其他所有进程却都没有拿到CPU资源，比如关机流程这个时候正常的话应该持有cpu资源吧！</p>
-<p>查看是不是有可以的D状态进程！比较可疑的几个我们用红色字母标记出来！！特别是这个init进程是首要的分析对象，因为android世界里所有的关机、重启流程都统一由init进程发起底层流程！所以内核的关机流程应该是运行在init进程空间里面！</p>
-<p><img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/disk-sleep-process.PNG" alt="D状态进程"></p>
-<p>先看看init进程的现场，和回溯上的关键函数device_shutdown的反汇编代码。在我们case中是跑的路径1。也就是说当前shutdown的设备存在父设备，这里要对父设备进行上锁。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/init-process.PNG" alt="init进程"></p>
-<p>看看对应的C代码，这里我们要找出parent的地址，进而找出这个mutex锁！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-mutex.PNG" alt="目标锁"></p>
-<p>检查struct device结构体，mutex的偏移0x60，和我们当前case的执行路径代码流程对应一致。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/target-device.PNG" alt="device和mutex的关系"></p>
-<h4 id="锁的推导"><a href="#锁的推导" class="headerlink" title="锁的推导"></a>锁的推导</h4><p>通常情况下对于变量的推导，可以从当前函数往前或者往后去推导。</p>
-<p>往前推导：从device_shutdown函数的C代码可以看到dev和parent是局部变量，我们断定可以下这个函数的栈帧中找到这两个变量。但是这个案例中，看看当前init进程堆栈中device_shutdown函数的详细堆栈情况。函数汇编代码我看起来有点吃力，不知道是不是代码被优化过了，device_shutdown函数的栈帧似乎并没有用来存储本地局部变量！能力有限，放弃往前推导。</p>
-<p>往后推导：mutex_lock函数接收一个参数，就是metux。我们看看往后能不能拿到这个锁的地址，进而找到parent这个device！mutex_lock函数中接收的x0就是这个mutex，红色1中x0会赋值给x19，然后红色2调用__ mutex_lock_slowpath函数，由于 __ mutex_lock_slowpath函数需要用到想x19，所以x19会先被保存在__mutex_lock_slowpath的栈帧当中，如红色3所示！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/flow1.PNG" alt="上锁流程1"></p>
-<p>看看__mutex_lock_slowpath函数栈帧偏移16的红框位置中应该就是被保存的x19，也就是mutex！！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/mutex-found.PNG" alt="mutex地址"></p>
-<p>通过mutex在struct device结构体中的偏移，我们就可以知道这个parent的地址为多少。parent的地址为ffffffcbf3a3b070 – 0x60 = ffffffcbf3a3b010，看看这个device的关键信息。对应的内核对象名字可以猜测是哪个模块的设备，mutex可以看到当前锁的owner（就是锁的持有者），还有可以看出哪些进程正在等待这个锁！下面我们一一分析！</p>
-<h4 id="死锁原因"><a href="#死锁原因" class="headerlink" title="死锁原因"></a>死锁原因</h4><p>前面我们已经找到了目标设备和目标锁的地址。看看我们关心的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/key-info.PNG" alt="关键信息"></p>
-<p>在内核代码搜索kobj名字，可以看到当前是在shutdown的模块是audio codecs：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-module.PNG" alt="问题模块"></p>
-<p>通过锁的owner可以查看，当前这个锁的持有者是kworker/7这个进程：<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-owner.PNG" alt="锁的持有者"></p>
-<p>通过wait_list我们看看有哪些进程在等待这个锁。再次确认kworker/7是持有者，init是等待者！也就是我们的问题所在。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/lock-waiter.PNG" alt></p>
-<p>现在需要进一步找出kworker/7为什么不释放这个锁，找到原因，问题也就可以解决了。同样的方法我们直接找出这个进程所等待的另一个锁ffffffcbf3a3c178。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-mutex.PNG" alt="问题锁"></p>
-<p>看看谁在持有了这个锁，发现是kworker/7自己持有了！！也就是说可能出现重复加锁的状态了，也就是嵌套申请同一个的情况锁！往前看kworker/7的回溯， 应该是在__msm_sdw_page_write函数中需要上这个锁，把对应的汇编和C代码拉出来！就是红圈标志的这个锁！<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-lock-fail.PNG" alt="上锁等待"></p>
-<p>通过回溯中一级一级函数往回找，看看哪级函数有申请这个锁的，主要关注msm_sdw这部分的函数。尝试通过代码和回溯的栈内容来找到这个锁的信息。<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-trace.PNG" alt="问题回溯"></p>
-<p>找了半天没有找到相关函数有申请这个锁的！怀疑是这个过程中有某些函数调用没有正确释放锁就返回导致的。结合kmsg，直接在相关模块搜索这个锁名字，看看所有有使用这个锁的函数！运气不错~<img src="/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/issue-code.PNG" alt="问题代码"></p>
-<h2 id="思路总结"><a href="#思路总结" class="headerlink" title="思路总结"></a>思路总结</h2><p>整个过程基本上说明的内核死锁的基本分析方法。得益于crash-utility的强大的命令。像struct、list等在此问题的分析上起到很多的作用。当然也需要具备一些内核的基础知识、arm汇编等。需要保持学习！</p>
+        <h2 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a><strong>问题描述</strong></h2><p>Monkey测试过程中发生死机。</p>
+<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a><strong>初步排查</strong></h2><p>手机黑屏、连接电脑后察看设备管理器出现日amdump相关的端口；使用高通的QPST工具抓出ramdump，使用高通的QCAP工具解析出kernel的oops信息。回溯和相关现场如下：<img src="/2019/05/25/Linux-global-data-overflow/trace.PNG" alt="回溯"></p>
+<p><img src="/2019/05/25/Linux-global-data-overflow/details.PNG" alt="现场"></p>
+<p>oops一般是由软件自身bug导致的问题，通常和硬件无关！从oops的信息看内核camera模块在探测摄像头模组的时候访问了一个非法地址，如红色标注1所示 。这里有两个疑问：</p>
+<ul>
+<li>跑monkey的过程中怎么会探测camer模组？探测模组应该是开机过程中camera服务启动初始化hal的时候完成的。</li>
+<li>这个非法地址是怎么产生的？</li>
+</ul>
+<h2 id="分析过程"><a href="#分析过程" class="headerlink" title="分析过程"></a>分析过程</h2><h4 id="问题定位"><a href="#问题定位" class="headerlink" title="问题定位"></a>问题定位</h4><p>从oops的信息目前只能确定哪个模块的哪行代码除了问题，并不能找到导致问题的是谁、如何导致的！需要使用crash-utility解析ramdump，推倒还原问题现场。对于非法地址问题，通常是要先看看地址是否有什么特殊性；解析出来后我们首先看看这个非法地址（0a6179676e617a5f）,完全不是一个内核地址，并且很像一个字符串。我们使用ascii命令解析一下这个地址，发现是”zangya<nul>“；非常幸运，是我们熟悉的字眼。</nul></p>
+<p>把回溯中PC指针指向的代码拉出来，同时看看x19寄存器的值。完全匹配！<img src="/2019/05/25/Linux-global-data-overflow/code.PNG" alt="代码"></p>
+<p>至此我们基本可以确定是全局数据踩踏问题，可以按照全局数据区域踩踏的思路继续分析下去！由于推倒的过程涉及到camera驱动初始化流程，过程比较繁琐，这里我们就直接忽略！大概思路就是通过rd命令读取sctrl变量往前找到我们从地址解析出来的字符串、查看符号表的排布，找出s_ctrl这变量之前的哪个全局变量出了问题。</p>
+<p>这个例子中推测出module_info这个用来存储camera模组信息的字符串发生了溢出。而溢出的原因是字符串不够长导致的，并非代码逻辑问题。我们的模组信息采集是嵌在高通的初始化流程里面的，高通初始化流程已经做了反复初始化的保护！</p>
+<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>字符串定义的不够长导致！我们相应的修改module_info字符串的长度应该就可以解决这个问题了！总结一下就是：</p>
+<ul>
+<li>camera的探测初始化应该是在开机过程就完成的，为什么跑monkey的过程中会跑到camera的探测流程？<br>猜测是monkey过程中camera hardware service进程发生了crash重启，导致hal重新初始化，进而重新进行camera探测流程!由于字符串溢出的缘故，此时s_ctrl已经被破坏，导致引用s_ctrl的时候内核发生崩溃！</li>
+<li>按照猜测，试试kill 掉camera hardware service这个进程看看问题是否可以复现？<br>实验结果是kill 掉camera hardware service问题必现，这对于我们的修改方案有效性的验证很有帮助！</li>
+<li>对于此类问题，还好是比较有特点的；否则分析起来难度可能就比较大！所以定制模块代码的时候，需要谨慎考虑数组越界、字符串操作是否得当等问题！当然关于全局数据踩踏问题可以使用kasan来检测，不过目前我还没使用过它分析过问题，有必要的时候应该试试看。</li>
+</ul>
 
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://yoursite.com/2019/05/20/Linux-kernel-deadlock-in-shutdown-flow/" data-id="cjy7ayu2g000aeoiikixxt9wh" class="article-share-link">Share</a>
+      <a data-url="http://yoursite.com/2019/05/25/Linux-global-data-overflow/" data-id="cjy7ayu2c0009eoii4bdyurq4" class="article-share-link">Share</a>
       
       
   <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Linux/">Linux</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/稳定性/">稳定性</a></li></ul>
@@ -125,7 +118,7 @@
 
   <nav id="page-nav">
     
-    <a class="extend prev" rel="prev" href="/page/9/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/8/">8</a><a class="page-number" href="/page/9/">9</a><span class="page-number current">10</span><a class="page-number" href="/page/11/">11</a><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/25/">25</a><a class="extend next" rel="next" href="/page/11/">Next &raquo;</a>
+    <a class="extend prev" rel="prev" href="/page/9/">&laquo; Prev</a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/8/">8</a><a class="page-number" href="/page/9/">9</a><span class="page-number current">10</span><a class="page-number" href="/page/11/">11</a><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/27/">27</a><a class="extend next" rel="next" href="/page/11/">Next &raquo;</a>
   </nav>
 
 </section>
@@ -139,7 +132,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tags</h3>
     <div class="widget">
-      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">11</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">16</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">7</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">8</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
     </div>
   </div>
 
@@ -149,7 +142,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Tag Cloud</h3>
     <div class="widget tagcloud">
-      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 16px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 18px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12px;">实战</a> <a href="/tags/稳定性/" style="font-size: 14px;">稳定性</a>
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 12.5px;">稳定性</a>
     </div>
   </div>
 
@@ -158,7 +151,7 @@
   <div class="widget-wrap">
     <h3 class="widget-title">Archives</h3>
     <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
     </div>
   </div>
 
@@ -171,6 +164,14 @@
       <ul>
         
           <li>
+            <a href="/2019/07/20/Android-gdb-extract-logs/">Android9.0 logd进程空间提取日志信息</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/15/Android-booting-time-spent/">Android开机时间分析</a>
+          </li>
+        
+          <li>
             <a href="/2019/07/10/a-intentresolver-cts-issue/">关于IntentResolver的一个cts问题</a>
           </li>
         
@@ -180,14 +181,6 @@
         
           <li>
             <a href="/2019/07/01/gdb_coredump_using/">Android平台上使用coredump+gdb</a>
-          </li>
-        
-          <li>
-            <a href="/2019/06/25/Android-Init-FBE/">Android启动流程-FBE部分</a>
-          </li>
-        
-          <li>
-            <a href="/2019/06/15/Linux-system-ipc/">Linux进程间通信机制</a>
           </li>
         
       </ul>

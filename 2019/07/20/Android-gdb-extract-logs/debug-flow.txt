@@ -1,0 +1,341 @@
+(gdb) set pagination off
+(gdb) p logBuf.lastLoggedElements
+$75 = {0x7ee2912020, 0x7ee292c1c0, 0x7ee29b3280, 0x7ee2934ea0, 0x0, 0x0, 0x0, 0x7ee29b56a0}
+(gdb) p /x *(LogBufferElement*)0x7ee2912020
+$76 = {
+  mUid = 0x422, 
+  mPid = 0x315, 
+  mTid = 0x315, 
+  mRealTime = {
+    tv_sec = 0x5c2a406b, 
+    tv_nsec = 0x27dcbb39, 
+    static tv_sec_max = 0xffffffff, 
+    static tv_nsec_max = 0x3b9ac9ff, 
+    static EPOCH = <optimized out>, 
+    static default_format = <optimized out>
+  }, 
+  mMsg = 0x7ee29b6080, 
+  {
+    mMsgLen = 0x3c, 
+    mDroppedCount = 0x3c
+  }, 
+  mLogId = 0x0, 
+  mDropped = 0x0, 
+  static sequence = {
+    <std::__1::__atomic_base<long, true>> = {
+      <std::__1::__atomic_base<long, false>> = {
+        __a_ = 0x10102464c457f
+      }, <No data fields>}, <No data fields>}, 
+  static FLUSH_ERROR = {
+    tv_sec = 0xffffffff, 
+    tv_nsec = 0xffffffff, 
+    static tv_sec_max = 0xffffffff, 
+    static tv_nsec_max = 0x3b9ac9ff, 
+    static EPOCH = <optimized out>, 
+    static default_format = <optimized out>
+  }
+}
+(gdb) p (char*)0x7ee29b6080
+$77 = 0x7ee29b6080 "\004/system/bin/tombstoned"
+(gdb) x/60cb 0x7ee29b6080
+0x7ee29b6080:	4 '\004'	47 '/'	115 's'	121 'y'	115 's'	116 't'	101 'e'	109 'm'
+0x7ee29b6088:	47 '/'	98 'b'	105 'i'	110 'n'	47 '/'	116 't'	111 'o'	109 'm'
+0x7ee29b6090:	98 'b'	115 's'	116 't'	111 'o'	110 'n'	101 'e'	100 'd'	0 '\000'
+0x7ee29b6098:	114 'r'	101 'e'	99 'c'	101 'e'	105 'i'	118 'v'	101 'e'	100 'd'
+0x7ee29b60a0:	32 ' '	99 'c'	114 'r'	97 'a'	115 's'	104 'h'	32 ' '	114 'r'
+0x7ee29b60a8:	101 'e'	113 'q'	117 'u'	101 'e'	115 's'	116 't'	32 ' '	102 'f'
+0x7ee29b60b0:	111 'o'	114 'r'	32 ' '	112 'p'	105 'i'	100 'd'	32 ' '	51 '3'
+0x7ee29b60b8:	52 '4'	48 '0'	57 '9'	0 '\000'
+
+(gdb) ptype LogBufferElement
+type = class LogBufferElement {
+  private:
+    const uint32_t mUid;
+    const uint32_t mPid;
+    const uint32_t mTid;
+    log_time mRealTime;
+    char *mMsg;
+    union {
+        const uint16_t mMsgLen;
+        uint16_t mDroppedCount;
+    };
+    const uint8_t mLogId;
+    bool mDropped;
+    static std::__1::atomic_int_fast64_t sequence;
+  public:
+    static const log_time FLUSH_ERROR;
+
+  private:
+    size_t populateDroppedMessage(char *&, LogBuffer *, bool);
+  public:
+    LogBufferElement(log_id_t, log_time, uid_t, pid_t, pid_t, const char *, unsigned short);
+    LogBufferElement(const LogBufferElement &);
+    ~LogBufferElement();
+    bool isBinary() const;
+    log_id_t getLogId() const;
+    uid_t getUid() const;
+    pid_t getPid() const;
+    pid_t getTid() const;
+    uint32_t getTag() const;
+    unsigned short getDropped() const;
+    unsigned short setDropped(unsigned short);
+    unsigned short getMsgLen() const;
+    const char * getMsg() const;
+    log_time getRealTime() const;
+    log_time flushTo(SocketClient *, LogBuffer *, bool, bool);
+}
+
+
+(gdb) p /x *&((LogBufferElement*)0x7ee2912020).mUid
+$90 = 0x422
+(gdb) p /x *&((LogBufferElement*)0x7ee2912020).mMsg
+$91 = 0x7ee29b6080
+(gdb) p *&((LogBufferElement*)0x7ee2912020).mMsg
+$92 = 0x7ee29b6080 "\004/system/bin/tombstoned"
+
+
+(gdb) set $pid = *&((LogBufferElement*)0x7ee29b3280).mPid
+(gdb) p $pid
+$117 = 1408
+(gdb) set $tid = *&((LogBufferElement*)0x7ee29b3280).mTid
+(gdb) p $tid
+$118 = 1408
+(gdb) set $realtime = *&((LogBufferElement*)0x7ee29b3280).mRealTime
+(gdb) p $realtime
+$119 = {
+  tv_sec = 1546272868, 
+  tv_nsec = 481000001, 
+  static tv_sec_max = 4294967295, 
+  static tv_nsec_max = 999999999, 
+  static EPOCH = <optimized out>, 
+  static default_format = <optimized out>
+}
+
+(gdb) set $elem = 0x7ee29b3280
+(gdb) p /x $elem
+$121 = 0x7ee29b3280
+(gdb) set $addr = *&((LogBufferElement*)$elem).mMsg
+(gdb) p $addr
+$122 = 0x7ee2987900 "\353\003"
+
+
+
+
+
+
+
+
+
+
+
+
+
+/////////////////////////////
+(gdb) set $msg_elem = 0x7ee29b3280
+(gdb) p $msg_elem
+$124 = 544967701120
+(gdb) p /x $msg_elem
+$125 = 0x7ee29b3280
+(gdb) set $pid = *&((LogBufferElement*)$msg_elem).mPid
+(gdb) p $pid
+$126 = 1408
+(gdb) set $tid = *&((LogBufferElement*)$msg_elem).mTid
+(gdb) p $tid
+$127 = 1408
+(gdb) set $len = *&((LogBufferElement*)$msg_elem).mMsgLen
+(gdb) p $len
+$128 = 352
+(gdb) (gdb) set $msg = *&((LogBufferElement*)$elem).mMsg
+Undefined command: "".  Try "help".
+(gdb) set $msg = *&((LogBufferElement*)$elem).mMsg
+(gdb) p /x $msg
+$129 = 0x7ee2987900
+
+date -d @1287331200  "+%Y-%m-%d"
+
+/system/bin/tombstonedreceived crash request for pid 3409
+
+eval "set $date_c = \"date -d @%d.%d '+%%Y-%%m-%%d %%H:%%M:%%S.%%N'\"", $tv_sec, $tv_nsec
+(gdb) print $date_c
+$5 = "date -d @1546272875.668777273 '+%Y-%m-%d %H:%M:%S.%N'"
+
+(gdb) eval "shell date -d @%d.%d '+%%Y-%%m-%%d %%H:%%M:%%S.%%N'",$tv_sec, $tv_nsec
+2019-01-01 00:14:35.668777273
+
+$48 = {
+  <std::__1::__list_imp<LogBufferElement*, std::__1::allocator<LogBufferElement*> >> = {
+    __end_ = {
+      __prev_ = 0x7ee29b5940, 
+      __next_ = 0x7ee2821d40
+    }, 
+    __size_alloc_ = {
+      <std::__1::__compressed_pair_elem<unsigned long, 0, false>> = {
+        __value_ = 0x106b
+      }, 
+      <std::__1::__compressed_pair_elem<std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >, 1, true>> = {
+        <std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >> = {<No data fields>}, <No data fields>}, <No data fields>}
+  }, <No data fields>}
+
+$81 = {
+  <std::__1::__list_imp<LogBufferElement*, std::__1::allocator<LogBufferElement*> >> = {
+    __end_ = {
+      __prev_ = 0x7ee29b5940, 
+      __next_ = 0x7ee2821d40
+    }, 
+    __size_alloc_ = {
+      <std::__1::__compressed_pair_elem<unsigned long, 0, false>> = {
+        __value_ = 0x106b
+      }, 
+      <std::__1::__compressed_pair_elem<std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >, 1, true>> = {
+        <std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >> = {<No data fields>}, <No data fields>}, <No data fields>}
+  }, <No data fields>}
+
+
+(gdb) extract_a_log 0x7ee29b3280
+2019-01-01 00:14:28.481000001
+1408 1408 �Wtype=1400 audit(0.0:516): avc: denied { getattr } for comm="ndroid.systemui" path="/sys/devices/platform/soc/200f000.qcom,spmi/spmi-0/spmi0-02/200f000.qcom,spmi:qcom,pmi632@2:qcom,qpnp-smb5/power_supply/usb/real_type" dev="sysfs" ino=33102 scontext=u:r:platform_app:s0:c512,c768 tcontext=u:object_r:sysfs_usb_supply:s0 tclass=file permissive=1
+
+
+(gdb) ptype LogBufferElementCollection
+type = class std::__1::list<LogBufferElement*, std::__1::allocator<LogBufferElement*> > [with _Tp = LogBufferElement *, _Alloc = std::__1::allocator<LogBufferElement*>] : private std::__1::__list_imp<LogBufferElement*, _Alloc> {
+  public:
+    list();
+    list(const _Alloc &);
+    list(size_type);
+    list(size_type, const _Alloc &);
+    list(size_type, reference);
+    list(size_type, reference, const _Alloc &);
+    list(const std::__1::list<LogBufferElement*, _Alloc> &);
+    list(const std::__1::list<LogBufferElement*, _Alloc> &, const _Alloc &);
+    list(std::initializer_list<LogBufferElement*>);
+    list(std::initializer_list<LogBufferElement*>, const _Alloc &);
+    list(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30617>);
+    list(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x3062b>, const _Alloc &);
+    std::__1::list<LogBufferElement*, _Alloc> & operator=(const std::__1::list<LogBufferElement*, _Alloc> &);
+    std::__1::list<LogBufferElement*, _Alloc> & operator=(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x3064c>);
+    std::__1::list<LogBufferElement*, _Alloc> & operator=(std::initializer_list<LogBufferElement*>);
+    void assign(std::initializer_list<LogBufferElement*>);
+    void assign(size_type, reference);
+    _Alloc get_allocator() const;
+    size_type size() const;
+    bool empty() const;
+    size_type max_size() const;
+    iterator begin();
+    const_iterator begin() const;
+    iterator end();
+    const_iterator end() const;
+    const_iterator cbegin() const;
+    const_iterator cend() const;
+    reverse_iterator rbegin();
+    const_reverse_iterator rbegin() const;
+    reverse_iterator rend();
+    const_reverse_iterator rend() const;
+    const_reverse_iterator crbegin() const;
+    const_reverse_iterator crend() const;
+    reference front();
+    reference front() const;
+    reference back();
+    reference back() const;
+    void push_front(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x308c9>);
+    void push_front(reference);
+    void push_back(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x308e1>);
+    void push_back(reference);
+    iterator insert(const_iterator, <unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30902>);
+    iterator insert(const_iterator, std::initializer_list<LogBufferElement*>);
+    iterator insert(const_iterator, reference);
+    iterator insert(const_iterator, size_type, reference);
+    void swap(std::__1::list<LogBufferElement*, _Alloc> &);
+    void clear();
+    void pop_front();
+    void pop_back();
+    iterator erase(const_iterator);
+    iterator erase(const_iterator, const_iterator);
+    void resize(size_type);
+    void resize(size_type, reference);
+    void splice(const_iterator, std::__1::list<LogBufferElement*, _Alloc> &);
+    void splice(const_iterator, <unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30a97>);
+    void splice(const_iterator, <unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30ab4>, const_iterator);
+    void splice(const_iterator, <unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30ad6>, const_iterator, const_iterator);
+    void splice(const_iterator, std::__1::list<LogBufferElement*, _Alloc> &, const_iterator);
+    void splice(const_iterator, std::__1::list<LogBufferElement*, _Alloc> &, const_iterator, const_iterator);
+    void remove(reference);
+    void unique();
+    void merge(std::__1::list<LogBufferElement*, _Alloc> &);
+    void merge(<unknown type in /home/huangzaiyang/WorkSpace/P400/out/target/product/msm8937_64/symbols/system/bin/logd, CU 0x3001f, DIE 0x30b84>);
+    void sort();
+    void reverse();
+    bool __invariants() const;
+    __hold_pointer __allocate_node(__node_allocator &);
+  private:
+    static void __link_nodes(__link_pointer, __link_pointer, __link_pointer);
+    void __link_nodes_at_front(__link_pointer, __link_pointer);
+    void __link_nodes_at_back(__link_pointer, __link_pointer);
+    iterator __iterator(size_type);
+    void __move_assign(std::__1::list<LogBufferElement*, _Alloc> &, std::__1::true_type);
+    void __move_assign(std::__1::list<LogBufferElement*, _Alloc> &, std::__1::false_type);
+
+    typedef _Alloc allocator_type;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::size_type size_type;
+    typedef _Tp value_type;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::iterator iterator;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::const_iterator const_iterator;
+    typedef std::__1::reverse_iterator<std::__1::__list_iterator<LogBufferElement*, void*> > reverse_iterator;
+    typedef std::__1::reverse_iterator<std::__1::__list_const_iterator<LogBufferElement*, void*> > const_reverse_iterator;
+    typedef _Tp &reference;
+    typedef const _Tp &const_reference;
+    typedef std::__1::unique_ptr<std::__1::__list_node<LogBufferElement*, void*>, std::__1::__allocator_destructor<std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> > > > __hold_pointer;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::__node_allocator __node_allocator;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::__link_pointer __link_pointer;
+    typedef std::__1::__list_imp<LogBufferElement*, _Alloc>::__node_pointer __node_pointer;
+}
+(gdb) ptype LogBufferElementCollection | grep end
+
+(gdb) def dump_all_threads_state
+Type commands for definition of "dump_all_threads_state".
+End with a line saying just "end".
+>    set $current = list_.__end_.__next_
+>    while $current != 0
+ >        p * $current.__value_
+ >        set $current = $current.__next_
+ >    end
+>end 
+///////////////////////////////////////////////////////////////////////////////////////////////
+(gdb) p /x logBuf.mLogElements
+$21 = {
+  <std::__1::__list_imp<LogBufferElement*, std::__1::allocator<LogBufferElement*> >> = {
+    __end_ = {
+      __prev_ = 0x7ee29b5940, 
+      __next_ = 0x7ee2821d40
+    }, 
+    __size_alloc_ = {
+      <std::__1::__compressed_pair_elem<unsigned long, 0, false>> = {
+        __value_ = 0x106b
+      }, 
+      <std::__1::__compressed_pair_elem<std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >, 1, true>> = {
+        <std::__1::allocator<std::__1::__list_node<LogBufferElement*, void*> >> = {<No data fields>}, <No data fields>}, <No data fields>}
+  }, <No data fields>}
+
+(gdb) p /x *('std::__1::__list_node<LogBufferElement*, void*>' *)0x7ee2821d40
+$16 = {
+  <std::__1::__list_node_base<LogBufferElement*, void*>> = {
+    __prev_ = 0x7ee280dc08, 
+    __next_ = 0x7ee2821de0
+  }, 
+  members of std::__1::__list_node<LogBufferElement*, void*>: 
+  __value_ = 0x7ee2821d00
+}
+
+(gdb) p /x (('std::__1::__list_node<LogBufferElement*, void*>' *)0x7ee2821d40).__value_
+$17 = 0x7ee2821d00
+
+(gdb) extract_a_log 0x7ee2821d00
+2019-01-01 00:09:09.232426618
+3409 3409 �#type=2000 audit(0.0:1): initialized
+
+789 789 /system/bin/tombstonedreceived crash request for pid 3409
+2019-01-01 00:14:35.690911023
+1214 1403 NativeCrashListenerCouldn't find ProcessRecord for pid 3409
+Cannot access memory at address 0x1077
+
+paste time logd_extract.log > final_logd.log
+

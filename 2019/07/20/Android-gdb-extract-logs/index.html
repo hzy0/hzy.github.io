@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  
+
+  
+  <title>Android9.0 logd进程空间提取日志信息 | JoyYoung&#39;s blog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="从logd进程空间解析出log">
+<meta name="keywords" content="实战,Android">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android9.0 logd进程空间提取日志信息">
+<meta property="og:url" content="http://yoursite.com/2019/07/20/Android-gdb-extract-logs/index.html">
+<meta property="og:site_name" content="JoyYoung&#39;s blog">
+<meta property="og:description" content="从logd进程空间解析出log">
+<meta property="og:locale" content="default">
+<meta property="og:image" content="http://yoursite.com/2019/07/20/Android-gdb-extract-logs/final_logs.PNG">
+<meta property="og:updated_time" content="2019-08-07T12:08:28.706Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Android9.0 logd进程空间提取日志信息">
+<meta name="twitter:description" content="从logd进程空间解析出log">
+<meta name="twitter:image" content="http://yoursite.com/2019/07/20/Android-gdb-extract-logs/final_logs.PNG">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+</html>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">JoyYoung&#39;s blog</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Android-gdb-extract-logs" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/07/20/Android-gdb-extract-logs/" class="article-date">
+  <time datetime="2019-07-20T15:00:00.000Z" itemprop="datePublished">2019-07-20</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      Android9.0 logd进程空间提取日志信息
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h4 id="目标进程"><a href="#目标进程" class="headerlink" title="目标进程"></a>目标进程</h4><p>稍微看了Android9.0版本的日志系统可以知道，其关键进程是logd；logd通过socket接收客户端传过来的log并保存在内存中，同时也接收客户端读取log的请求（比如logcat）和客户端一些操作请求（比如清空log）。所以logd有三个socket端口：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">TB-XXXXX:/dev/socket # ls -lZ | grep logd</span><br><span class="line">srw-rw-rw- 1 logd      logd      u:object_r:logd_socket:s0                    0 2019-01-01 00:14 logd</span><br><span class="line">srw-rw-rw- 1 logd      logd      u:object_r:logdr_socket:s0                   0 2019-01-01 00:14 logdr</span><br><span class="line">s-w--w--w- 1 logd      logd      u:object_r:logdw_socket:s0                   0 2019-01-01 00:14 logdw</span><br></pre></td></tr></table></figure>
+
+<p>细节很多，但是大多不是我关心的；这里只是为了从coredump中把log信息提取出来，在某些没有抓取logcat的稳定性案例中可能有用！</p>
+<h4 id="关键代码"><a href="#关键代码" class="headerlink" title="关键代码"></a>关键代码</h4><p>在system/core/logd/main.cpp中定义了全局的log缓存对象，所有对log的操作（读、写、缓冲区溢出处理）都是经过这个对象操作：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> LogBuffer* logBuf = <span class="literal">nullptr</span>;</span><br></pre></td></tr></table></figure>
+
+<p>这里我们只需要关注写入的操作流程，理解了大致的写入流程就可以找到对应的缓冲区，然后把内存中的字符串打印出来。</p>
+<p>直接看到main函数中的以下这段代码，LogListener负责监听客户端通过logdw发送过来的log信息，然后将log保存并通知reader刷新给请求读取的客户端。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// LogListener listens on /dev/socket/logdw for client</span></span><br><span class="line"><span class="comment">// initiated log messages. New log entries are added to LogBuffer</span></span><br><span class="line"><span class="comment">// and LogReader is notified to send updates to connected clients.</span></span><br><span class="line"></span><br><span class="line">LogListener* swl = <span class="keyword">new</span> LogListener(logBuf, reader);</span><br><span class="line"><span class="comment">// Backlog and /proc/sys/net/unix/max_dgram_qlen set to large value</span></span><br><span class="line"><span class="keyword">if</span> (swl-&gt;startListener(<span class="number">600</span>)) &#123;</span><br><span class="line">    <span class="built_in">exit</span>(<span class="number">1</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>LogListener继承于SocketListener，所以我们直接看看onDataAvailable回调函数中我们关心的代码，在函数的最后：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (logbuf != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    <span class="comment">//log写入</span></span><br><span class="line">    <span class="keyword">int</span> res = logbuf-&gt;<span class="built_in">log</span>(</span><br><span class="line">        logId, header-&gt;realtime, cred-&gt;uid, cred-&gt;pid, header-&gt;tid, msg,</span><br><span class="line">        ((<span class="keyword">size_t</span>)n &lt;= USHRT_MAX) ? (<span class="keyword">unsigned</span> <span class="keyword">short</span>)n : USHRT_MAX);</span><br><span class="line">    <span class="comment">//通知reader刷新给客户端</span></span><br><span class="line">    <span class="keyword">if</span> (res &gt; <span class="number">0</span> &amp;&amp; reader != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">        reader-&gt;notifyNewLog(<span class="keyword">static_cast</span>&lt;<span class="keyword">log_mask_t</span>&gt;(<span class="number">1</span> &lt;&lt; logId));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>进入到LogBuffer的log函数，可以看到其根据传入的参数new了一个LogBufferElement对象，代表一条log，包含了log的所有具体信息！然后add进LogBuffer的mLogElements列表中。</p>
+<h4 id="日志提取"><a href="#日志提取" class="headerlink" title="日志提取"></a>日志提取</h4><p>通过关键代码阅读，我们对从logd进程的内存中提取日志有了具体的目标。所以直接抓取一份logd进程的core文件，通过gdb加载调试。log信息当然是要一条一条解析的，所以我们先看看解析一条日子信息的情况：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span>关闭分页显示</span><br><span class="line">(gdb) set pagination off</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>看看最近各类log的最新一条日志信息，比如main、radio、events、system等等，android有8类</span><br><span class="line">(gdb) p logBuf.lastLoggedElements</span><br><span class="line"><span class="meta">$</span>75 = &#123;0x7ee2912020, 0x7ee292c1c0, 0x7ee29b3280, 0x7ee2934ea0, 0x0, 0x0, 0x0, 0x7ee29b56a0&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>看看main log的最新一条日志</span><br><span class="line">(gdb) p /x *(LogBufferElement*)0x7ee2912020</span><br><span class="line"><span class="meta">$</span>76 = &#123;</span><br><span class="line">  mUid = 0x422, </span><br><span class="line">  mPid = 0x315, </span><br><span class="line">  mTid = 0x315, </span><br><span class="line">  mRealTime = &#123;</span><br><span class="line">    tv_sec = 0x5c2a406b, </span><br><span class="line">    tv_nsec = 0x27dcbb39, </span><br><span class="line">    static tv_sec_max = 0xffffffff, </span><br><span class="line">    static tv_nsec_max = 0x3b9ac9ff, </span><br><span class="line">    static EPOCH = &lt;optimized out&gt;, </span><br><span class="line">    static default_format = &lt;optimized out&gt;</span><br><span class="line">  &#125;, </span><br><span class="line">  mMsg = 0x7ee29b6080, </span><br><span class="line">  &#123;</span><br><span class="line">    mMsgLen = 0x3c, </span><br><span class="line">    mDroppedCount = 0x3c</span><br><span class="line">  &#125;, </span><br><span class="line">  mLogId = 0x0, </span><br><span class="line">  mDropped = 0x0, </span><br><span class="line">  static sequence = &#123;</span><br><span class="line">    &lt;std::__1::__atomic_base&lt;long, true&gt;&gt; = &#123;</span><br><span class="line">      &lt;std::__1::__atomic_base&lt;long, false&gt;&gt; = &#123;</span><br><span class="line">        __a_ = 0x10102464c457f</span><br><span class="line">      &#125;, &lt;No data fields&gt;&#125;, &lt;No data fields&gt;&#125;, </span><br><span class="line">  static FLUSH_ERROR = &#123;</span><br><span class="line">    tv_sec = 0xffffffff, </span><br><span class="line">    tv_nsec = 0xffffffff, </span><br><span class="line">    static tv_sec_max = 0xffffffff, </span><br><span class="line">    static tv_nsec_max = 0x3b9ac9ff, </span><br><span class="line">    static EPOCH = &lt;optimized out&gt;, </span><br><span class="line">    static default_format = &lt;optimized out&gt;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>打印这条日志所在的内存，发现日志不完整</span><br><span class="line">(gdb) p (char*)0x7ee29b6080</span><br><span class="line"><span class="meta">$</span>77 = 0x7ee29b6080 "\004/system/bin/tombstoned"</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>直接读取指定大小的内存信息，这才是完整的日志信息，但是tombstone后面本来应该是": ",不知为何变成了</span><br><span class="line"><span class="meta">#</span>结束符'\000'，导致p命令不能打印完整的信息！</span><br><span class="line">(gdb) x/60cb 0x7ee29b6080</span><br><span class="line">0x7ee29b6080:	4 '\004'	47 '/'	115 's'	121 'y'	115 's'	116 't'	101 'e'	109 'm'</span><br><span class="line">0x7ee29b6088:	47 '/'	98 'b'	105 'i'	110 'n'	47 '/'	116 't'	111 'o'	109 'm'</span><br><span class="line">0x7ee29b6090:	98 'b'	115 's'	116 't'	111 'o'	110 'n'	101 'e'	100 'd'	0 '\000'</span><br><span class="line">0x7ee29b6098:	114 'r'	101 'e'	99 'c'	101 'e'	105 'i'	118 'v'	101 'e'	100 'd'</span><br><span class="line">0x7ee29b60a0:	32 ' '	99 'c'	114 'r'	97 'a'	115 's'	104 'h'	32 ' '	114 'r'</span><br><span class="line">0x7ee29b60a8:	101 'e'	113 'q'	117 'u'	101 'e'	115 's'	116 't'	32 ' '	102 'f'</span><br><span class="line">0x7ee29b60b0:	111 'o'	114 'r'	32 ' '	112 'p'	105 'i'	100 'd'	32 ' '	51 '3'</span><br><span class="line">0x7ee29b60b8:	52 '4'	48 '0'	57 '9'	0 '\000'</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>查看结构体或者类的定义</span><br><span class="line">(gdb) ptype LogBufferElement</span><br><span class="line">type = class LogBufferElement &#123;</span><br><span class="line">  private:</span><br><span class="line">    const uint32_t mUid;</span><br><span class="line">    const uint32_t mPid;</span><br><span class="line">    const uint32_t mTid;</span><br><span class="line">    log_time mRealTime;</span><br><span class="line">    char *mMsg;</span><br><span class="line">    union &#123;</span><br><span class="line">        const uint16_t mMsgLen;</span><br><span class="line">        uint16_t mDroppedCount;</span><br><span class="line">    &#125;;</span><br><span class="line">    const uint8_t mLogId;</span><br><span class="line">    bool mDropped;</span><br><span class="line">    static std::__1::atomic_int_fast64_t sequence;</span><br><span class="line">  public:</span><br><span class="line">    static const log_time FLUSH_ERROR;</span><br><span class="line"></span><br><span class="line">  private:</span><br><span class="line">    size_t populateDroppedMessage(char *&amp;, LogBuffer *, bool);</span><br><span class="line">  public:</span><br><span class="line">    LogBufferElement(log_id_t, log_time, uid_t, pid_t, pid_t, const char *, unsigned short);</span><br><span class="line">    LogBufferElement(const LogBufferElement &amp;);</span><br><span class="line">    ~LogBufferElement();</span><br><span class="line">    bool isBinary() const;</span><br><span class="line">    log_id_t getLogId() const;</span><br><span class="line">    uid_t getUid() const;</span><br><span class="line">    pid_t getPid() const;</span><br><span class="line">    pid_t getTid() const;</span><br><span class="line">    uint32_t getTag() const;</span><br><span class="line">    unsigned short getDropped() const;</span><br><span class="line">    unsigned short setDropped(unsigned short);</span><br><span class="line">    unsigned short getMsgLen() const;</span><br><span class="line">    const char * getMsg() const;</span><br><span class="line">    log_time getRealTime() const;</span><br><span class="line">    log_time flushTo(SocketClient *, LogBuffer *, bool, bool);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>访问结构体成员变量</span><br><span class="line">(gdb) p /x *&amp;((LogBufferElement*)0x7ee2912020).mUid</span><br><span class="line"><span class="meta">$</span>90 = 0x422</span><br><span class="line">(gdb) p /x *&amp;((LogBufferElement*)0x7ee2912020).mMsg</span><br><span class="line"><span class="meta">$</span>91 = 0x7ee29b6080</span><br><span class="line">(gdb) p *&amp;((LogBufferElement*)0x7ee2912020).mMsg</span><br><span class="line"><span class="meta">$</span>92 = 0x7ee29b6080 "\004/system/bin/tombstoned"</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span>通过https://legacy.gitbook.com/@wizardforcel搜索“”</span><br></pre></td></tr></table></figure>
+
+<p>一条log信息的内容应该是以下这样的格式：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;</span> 日期   时间          PID  TID     级别     TAG     :  信息</span><br><span class="line"><span class="meta">&gt;</span> 01-01 18:14:35.741 29337 29342   E       Diag_Lib: qvp_rtp_media_init</span><br></pre></td></tr></table></figure>
+
+<p>我们现在面临的问题有2个，我们一个一个来解决：</p>
+<p><u><strong>1、如何解决日志信息中间出现的“: ” 变成结束符’\000’的问题。</strong></u></p>
+<p>对于这个问题只能基于gdb的print命令自定义一个可以打印指定长度的字符串。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">(gdb) extract_a_log 0x7ee29b3280</span><br><span class="line">2019-01-01 00:14:28.481000001</span><br><span class="line">1408 1408 �Wtype=1400 audit(0.0:516): avc: denied &#123; getattr &#125; for comm="ndroid.systemui" path="/sys/devices/platform/soc/200f000.qcom,spmi/spmi-0/spmi0-02/200f000.qcom,spmi:qcom,pmi632@2:qcom,qpnp-smb5/power_supply/usb/real_type" dev="sysfs" ino=33102 scontext=u:r:platform_app:s0:c512,c768 tcontext=u:object_r:sysfs_usb_supply:s0 tclass=file permissive=1</span><br></pre></td></tr></table></figure>
+
+<p><u><strong>2、如何遍历std::list。</strong></u></p>
+<p>关于这个问题需要先明确一点，就是程序使用的是gcc的stdlibc++还是llvm的libc++，两者的实现是不一样的！我们这个例子使用的是libc++，其相关实现的源码在<a href="http://llvm.org/svn/llvm-project/libcxx/branches/" target="_blank" rel="noopener">http://llvm.org/svn/llvm-project/libcxx/branches/</a> 可以找到！</p>
+<p>于是参照std::list在llvm的libc++版本的实现，我们先单个解析一个log记录看看：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span>打印log记录链表信息</span><br><span class="line"><span class="meta">$</span>21 = &#123;</span><br><span class="line">  &lt;std::__1::__list_imp&lt;LogBufferElement*, std::__1::allocator&lt;LogBufferElement*&gt; &gt;&gt; = &#123;</span><br><span class="line">    __end_ = &#123;</span><br><span class="line">      __prev_ = 0x7ee29b5940, </span><br><span class="line">      __next_ = 0x7ee2821d40</span><br><span class="line">    &#125;, </span><br><span class="line">    __size_alloc_ = &#123;</span><br><span class="line">      &lt;std::__1::__compressed_pair_elem&lt;unsigned long, 0, false&gt;&gt; = &#123;</span><br><span class="line">        __value_ = 0x106b</span><br><span class="line">      &#125;, </span><br><span class="line">      &lt;std::__1::__compressed_pair_elem&lt;std::__1::allocator&lt;std::__1::__list_node&lt;LogBufferElement*, void*&gt; &gt;, 1, true&gt;&gt; = &#123;</span><br><span class="line">        &lt;std::__1::allocator&lt;std::__1::__list_node&lt;LogBufferElement*, void*&gt; &gt;&gt; = &#123;&lt;No data fields&gt;&#125;, &lt;No data fields&gt;&#125;, &lt;No data fields&gt;&#125;</span><br><span class="line">  &#125;, &lt;No data fields&gt;&#125;</span><br><span class="line"><span class="meta">#</span>打印next指向的log记录信息</span><br><span class="line"><span class="meta">$</span>16 = &#123;</span><br><span class="line">  &lt;std::__1::__list_node_base&lt;LogBufferElement*, void*&gt;&gt; = &#123;</span><br><span class="line">    __prev_ = 0x7ee280dc08, </span><br><span class="line">    __next_ = 0x7ee2821de0</span><br><span class="line">  &#125;, </span><br><span class="line">  members of std::__1::__list_node&lt;LogBufferElement*, void*&gt;: </span><br><span class="line">  __value_ = 0x7ee2821d00</span><br><span class="line">&#125;</span><br><span class="line"><span class="meta">#</span>extract_a_log使我们之前自定义的函数，解析一条log信息</span><br><span class="line">(gdb) extract_a_log 0x7ee2821d00</span><br><span class="line">2019-01-01 00:09:09.232426618</span><br><span class="line">3409 3409 �#type=2000 audit(0.0:1): initialized</span><br></pre></td></tr></table></figure>
+
+<p>至此只要写一个extract_all_logs函数就可以从logd进程中把所有log解析出来了。当然可以把输出重定向到指定的文件中！</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">set logging file logd_extract.log</span><br><span class="line">set logging on</span><br><span class="line">extract_all_logs logBuf.mLogElements</span><br><span class="line"><span class="meta">#</span>将生成的log记录信息和时间合并，在shell命令行中执行</span><br><span class="line">paste time logd_extract.log &gt; final_logd.log</span><br></pre></td></tr></table></figure>
+
+<p>最终提取出来的log信息如下，由于某些内存的字符是不可显示的字符，所以我们提取出来的都是ascii码在32~126之前的字符，像TAG这种不知为何其内存的字符ascii码不对就没有打印出来了。<img src="/2019/07/20/Android-gdb-extract-logs/final_logs.PNG" alt="log"></p>
+<p>至此，虽然最后log效果不完美，但是从logd进程的coredump解析出log的事情就先告一段落的了！</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/07/20/Android-gdb-extract-logs/" data-id="cjz17avxq000300iieiang9yn" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Android/">Android</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/实战/">实战</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+  
+    <a href="/2019/07/15/Android-booting-time-spent/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Android开机时间分析</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/AIDL/">AIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Android/">Android</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/HIDL/">HIDL</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Linux/">Linux</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/driver/">driver</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/学习/">学习</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/实战/">实战</a><span class="tag-list-count">8</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/稳定性/">稳定性</a><span class="tag-list-count">8</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/AIDL/" style="font-size: 10px;">AIDL</a> <a href="/tags/Android/" style="font-size: 17.5px;">Android</a> <a href="/tags/HIDL/" style="font-size: 10px;">HIDL</a> <a href="/tags/Linux/" style="font-size: 15px;">Linux</a> <a href="/tags/driver/" style="font-size: 10px;">driver</a> <a href="/tags/学习/" style="font-size: 20px;">学习</a> <a href="/tags/实战/" style="font-size: 12.5px;">实战</a> <a href="/tags/稳定性/" style="font-size: 12.5px;">稳定性</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/07/">July 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/06/">June 2019</a><span class="archive-list-count">3</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/05/">May 2019</a><span class="archive-list-count">8</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/04/">April 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/03/">March 2019</a><span class="archive-list-count">5</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/02/">February 2019</a><span class="archive-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2019/07/20/Android-gdb-extract-logs/">Android9.0 logd进程空间提取日志信息</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/15/Android-booting-time-spent/">Android开机时间分析</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/10/a-intentresolver-cts-issue/">关于IntentResolver的一个cts问题</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/05/native-acess-javaservice-with-binder/">Android平台上native代码访问PackageManagerService</a>
+          </li>
+        
+          <li>
+            <a href="/2019/07/01/gdb_coredump_using/">Android平台上使用coredump+gdb</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2019 JoyYoung<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>
